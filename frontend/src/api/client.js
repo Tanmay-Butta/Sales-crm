@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Axios HTTP client with JWT interceptor.
  * Automatically attaches Authorization header and handles 401 redirects.
  */
@@ -17,7 +17,7 @@ const client = axios.create({
 // Request interceptor: attach JWT token
 client.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -31,8 +31,8 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user');
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('user');
       // Only redirect if not already on login page
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
@@ -43,3 +43,4 @@ client.interceptors.response.use(
 );
 
 export default client;
+
