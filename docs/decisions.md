@@ -34,3 +34,6 @@ below, not necessarily the last one; add a **Later reversed:** line to whichever
 - **Chose:**
 - **Rejected:**
 - **Why:**
+
+### Assumptions & Business Rules
+- **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is rejected server-side to prevent accumulating new pipeline on dead accounts.
