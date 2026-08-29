@@ -1,0 +1,24 @@
+# Web framework
+Flask==3.1.1
+flask-cors==5.0.1
+
+# Database
+Flask-SQLAlchemy==3.1.1
+Flask-Migrate==4.1.0
+SQLAlchemy==2.0.40
+psycopg2-binary==2.9.10
+alembic==1.15.2
+
+# Authentication
+Flask-JWT-Extended==4.7.1
+bcrypt==4.3.0
+PyJWT==2.10.1
+
+# Validation
+marshmallow==3.25.1
+
+# Production server
+gunicorn==23.0.0
+
+# Utilities
+python-dotenv==1.1.0
