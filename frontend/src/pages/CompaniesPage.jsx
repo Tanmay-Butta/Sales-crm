@@ -1,44 +1,44 @@
-﻿/**
- * Companies Page — list, create, edit, archive companies.
- */
-
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, Fragment } from 'react';
 import { Building2, Plus, Edit2, Archive, RotateCcw, Link as LinkIcon, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-
 import { useAuth } from '../contexts/AuthContext';
 import { companiesAPI } from '../api/companies';
 import { authAPI } from '../api/auth';
 
 export default function CompaniesPage() {
-  const { isManager, user } = useAuth();
-  
+  const { user, isManager } = useAuth();
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
-  const [formData, setFormData] = useState({ name: '', industry: '', website: '', owner_id: '' });
+  const [expandedCompanyId, setExpandedCompanyId] = useState(null);
+  
+  const [formData, setFormData] = useState({
+    name: '',
+    industry: '',
+    website: '',
+    owner_id: ''
+  });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchData();
-  }, [showArchived]);
+  }, [showArchived, isManager]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [compRes, repsRes] = await Promise.all([
+      const [companiesRes, repsRes] = await Promise.all([
         companiesAPI.getCompanies(showArchived),
         isManager ? authAPI.getReps() : Promise.resolve({ data: { users: [] } })
       ]);
-      setCompanies(compRes.data.companies);
+      setCompanies(companiesRes.data.companies);
       if (isManager) setReps(repsRes.data.users);
     } catch (err) {
-      toast.error('Failed to load companies');
+      toast.error("Failed to load companies");
     } finally {
       setLoading(false);
     }
@@ -67,20 +67,21 @@ export default function CompaniesPage() {
     
     try {
       const payload = { ...formData };
-      if (!payload.website) delete payload.website; // Remove empty website
-      if (!isManager) delete payload.owner_id; // Reps can't set owner
+      if (!payload.website) delete payload.website;
+      if (!isManager) delete payload.owner_id;
 
       if (editingCompany) {
         await companiesAPI.updateCompany(editingCompany.id, payload);
-        toast.success('Company updated');
+        toast.success("Company updated");
       } else {
         await companiesAPI.createCompany(payload);
-        toast.success('Company created');
+        toast.success("Company created");
       }
       setIsModalOpen(false);
       fetchData();
     } catch (err) {
-      toast.error(err.response?.data?.error?.message || 'Operation failed');
+      const message = err.response?.data?.error?.message || "Failed to save company";
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -88,16 +89,15 @@ export default function CompaniesPage() {
 
   const toggleArchive = async (company) => {
     const action = company.archived_at ? 'restore' : 'archive';
-    if (!window.confirm(`Are you sure you want to ${action} ${company.name}?`)) return;
-
+    if (!window.confirm(`Are you sure you want to ${action} this company?`)) return;
+    
     try {
       if (company.archived_at) {
         await companiesAPI.restoreCompany(company.id);
-        toast.success('Company restored');
       } else {
         await companiesAPI.archiveCompany(company.id);
-        toast.success('Company archived');
       }
+      toast.success(`Company ${action}d successfully`);
       fetchData();
     } catch (err) {
       const message = err.response?.data?.error?.message || `Failed to ${action} company`;
@@ -158,56 +158,92 @@ export default function CompaniesPage() {
                 const canEdit = isManager || company.owner_id === user.id;
                 
                 return (
-                  <tr key={company.id} style={{ opacity: company.archived_at ? 0.6 : 1 }}>
-                    <td style={{ fontWeight: 500 }}>{company.name}</td>
-                    <td>{company.industry}</td>
-                    <td>
-                      {company.website ? (
-                        <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
-                          <LinkIcon size={12} /> Link
-                        </a>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {company.owner?.full_name || <span className="text-muted text-danger">ERROR: No Owner</span>}
-                    </td>
-                    <td>
-                      {company.archived_at ? (
-                        <span className="badge badge-archived">Archived</span>
-                      ) : (
-                        <span className="badge badge-won">Active</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        {canEdit && (
-                          <>
-                            <button 
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => openEditModal(company)}
-                              title="Edit company"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <button 
-                              className={`btn btn-ghost btn-sm ${company.archived_at ? 'text-success' : 'text-danger'}`}
-                              onClick={() => toggleArchive(company)}
-                              title={company.archived_at ? "Restore company" : "Archive company"}
-                            >
-                              {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
-                            </button>
-                          </>
+                  <Fragment key={company.id}>
+                    <tr 
+                      style={{ opacity: company.archived_at ? 0.6 : 1, cursor: 'pointer' }}
+                      onClick={() => setExpandedCompanyId(expandedCompanyId === company.id ? null : company.id)}
+                    >
+                      <td style={{ fontWeight: 500 }}>{company.name}</td>
+                      <td>{company.industry}</td>
+                      <td>
+                        {company.website ? (
+                          <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
+                            <LinkIcon size={12} /> Link
+                          </a>
+                        ) : (
+                          <span className="text-muted">-</span>
                         )}
-                        {!canEdit && (
-                          <span className="text-muted text-xs" title="You don't have permission to edit this company">
-                            <AlertCircle size={16} />
-                          </span>
+                      </td>
+                      <td>
+                        {company.owner?.full_name || <span className="text-muted text-danger">ERROR: No Owner</span>}
+                      </td>
+                      <td>
+                        {company.archived_at ? (
+                          <span className="badge badge-archived">Archived</span>
+                        ) : (
+                          <span className="badge badge-won">Active</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          {canEdit && (
+                            <>
+                              <button 
+                                className="btn btn-ghost btn-sm"
+                                onClick={(e) => { e.stopPropagation(); openEditModal(company); }}
+                                title="Edit company"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button 
+                                className={`btn btn-ghost btn-sm ${company.archived_at ? 'text-success' : 'text-danger'}`}
+                                onClick={(e) => { e.stopPropagation(); toggleArchive(company); }}
+                                title={company.archived_at ? "Restore company" : "Archive company"}
+                              >
+                                {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
+                              </button>
+                            </>
+                          )}
+                          {!canEdit && (
+                            <span className="text-muted text-xs" title="You don't have permission to edit this company">
+                              <AlertCircle size={16} />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedCompanyId === company.id && (
+                      <tr className="bg-darker">
+                        <td colSpan="6" style={{ padding: '16px' }}>
+                          <h4 style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--color-text-muted)' }}>Deals for {company.name}</h4>
+                          {(!company.deals || company.deals.length === 0) ? (
+                            <div className="text-muted text-sm">No deals associated with this company yet.</div>
+                          ) : (
+                            <table className="table" style={{ background: 'var(--color-bg)' }}>
+                              <thead>
+                                <tr>
+                                  <th>TITLE</th>
+                                  <th>VALUE</th>
+                                  <th>STAGE</th>
+                                  <th>CLOSE DATE</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {company.deals.map(deal => (
+                                  <tr key={deal.id}>
+                                    <td className="font-medium text-white">{deal.title}</td>
+                                    <td className="font-medium">${deal.value}</td>
+                                    <td><span className="badge badge-blue">{deal.stage}</span></td>
+                                    <td>{new Date(deal.expected_close_date).toLocaleDateString()}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -221,7 +257,7 @@ export default function CompaniesPage() {
           <div className="modal">
             <div className="modal-header">
               <h2 className="modal-title">{editingCompany ? 'Edit Company' : 'New Company'}</h2>
-              <button className="modal-close" onClick={() => setIsModalOpen(false)}>?</button>
+              <button className="modal-close" onClick={() => setIsModalOpen(false)}>✕</button>
             </div>
             
             <form onSubmit={handleSubmit}>

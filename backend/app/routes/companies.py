@@ -1,4 +1,4 @@
-"""
+﻿"""
 Company routes.
 """
 
@@ -17,7 +17,7 @@ def get_companies(current_user):
     return jsonify({
         'companies': [
             {
-                **c.to_dict(),
+                **c.to_dict(include_deals=True),
                 'owner': c.owner.to_dict() if c.owner else None
             } for c in companies
         ]
@@ -48,3 +48,4 @@ def archive_company(current_user, company_id):
 def restore_company(current_user, company_id):
     company = company_service.restore_company(current_user, company_id)
     return jsonify({'company': company.to_dict()}), 200
+

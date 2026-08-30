@@ -1,0 +1,17 @@
+﻿- `[/]` Backend Implementation
+  - `[x]` Create `backend/app/models/deal.py`
+  - `[x]` Register `Deal` model in `__init__.py`
+  - `[x]` Create `backend/app/schemas/deal.py`
+  - `[x]` Create `backend/app/services/deal_service.py`
+  - `[x]` Create `backend/app/routes/deals.py`
+  - `[x]` Register `deals_bp` blueprint
+  - `[x]` Run Alembic migration for Deal model
+- `[x]` Frontend API & Routing
+  - `[x]` Create `frontend/src/api/deals.js`
+- `[x]` Frontend UI
+  - `[x]` Build `DealsPage.jsx` (List, Create, Update)
+  - `[x]` Update `CompaniesPage.jsx` (Expandable rows for Deals)
+- `[/]` Verification
+  - `[ ]` Create deal (check precision, requirements)
+  - `[ ]` Check company view for nested deals
+  - `[ ]` Check RBAC visibility rules
