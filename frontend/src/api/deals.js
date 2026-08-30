@@ -1,33 +1,61 @@
-/**
- * API service for Deals, Collaborators, and History.
- */
-
 import client from './client';
 
 export const dealsAPI = {
-  // Get all deals visible to the user globally
-  getDeals: () => client.get('/deals'),
+  // Get all deals visible to current user
+  getDeals: () => {
+    return client.get('/deals');
+  },
 
-  // Get deals where user is owner or collaborator (Spec §5)
-  getMyDeals: () => client.get('/deals/my-deals'),
+  // Get deals where user is owner or collaborator (Spec §5 My Deals)
+  getMyDeals: () => {
+    return client.get('/deals/my-deals');
+  },
 
-  // Get a specific deal
-  getDeal: (id) => client.get(`/deals/${id}`),
+  // Get single deal by ID
+  getDeal: (id) => {
+    return client.get(`/deals/${id}`);
+  },
 
   // Create a new deal
-  createDeal: (data) => client.post('/deals', data),
+  createDeal: (data) => {
+    return client.post('/deals', data);
+  },
 
-  // Update a deal's basic info (title, value, date, or owner for manager)
-  updateDeal: (id, data) => client.put(`/deals/${id}`, data),
+  // Update a deal (title, value, date, or manager owner reassignment)
+  updateDeal: (id, data) => {
+    return client.put(`/deals/${id}`, data);
+  },
 
-  // Delete a deal
-  deleteDeal: (id) => client.delete(`/deals/${id}`),
+  // Soft-delete a deal
+  deleteDeal: (id) => {
+    return client.delete(`/deals/${id}`);
+  },
 
   // Collaborators
-  getCollaborators: (dealId) => client.get(`/deals/${dealId}/collaborators`),
-  addCollaborator: (dealId, userId) => client.post(`/deals/${dealId}/collaborators`, { user_id: userId }),
-  removeCollaborator: (dealId, userId) => client.delete(`/deals/${dealId}/collaborators/${userId}`),
+  getCollaborators: (dealId) => {
+    return client.get(`/deals/${dealId}/collaborators`);
+  },
 
-  // History / Audit trail
-  getHistory: (dealId) => client.get(`/deals/${dealId}/history`),
+  addCollaborator: (dealId, userId) => {
+    return client.post(`/deals/${dealId}/collaborators`, { user_id: userId });
+  },
+
+  removeCollaborator: (dealId, userId) => {
+    return client.delete(`/deals/${dealId}/collaborators/${userId}`);
+  },
+
+  // Deal Audit Trail Timeline
+  getHistory: (dealId) => {
+    return client.get(`/deals/${dealId}/history`);
+  },
+
+  // Lifecycle Stage Transitions
+  changeStage: (dealId, stage, reason) => {
+    return client.post(`/deals/${dealId}/stage`, { stage, reason });
+  },
+
+  // Manager-only Deal Reopening
+  reopenDeal: (dealId) => {
+    return client.post(`/deals/${dealId}/reopen`);
+  }
 };

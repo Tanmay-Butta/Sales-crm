@@ -55,3 +55,10 @@ class BusinessRuleError(AppError):
 
     def __init__(self, message, code='BUSINESS_RULE_VIOLATION'):
         super().__init__(message, code=code, status_code=409)
+
+
+class InternalError(AppError):
+    """500 — Server-side invariant violation or critical state corruption."""
+
+    def __init__(self, message='Internal invariant violation', code='INVARIANT_VIOLATION'):
+        super().__init__(message, code=code, status_code=500)

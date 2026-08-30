@@ -42,6 +42,16 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Permitting silent duplicate company names across different reps or hard-blocking managers without an override option.
 - **Why:** The README specifically highlights the operational failure mode where *"two reps end up working the same company because neither knew the other had already reached out."* If Rep A owns *Google* and Rep B separately creates another *Google* account, the organization suffers from split communication, competing pitches, and commission conflicts. When a duplicate name is detected for a rep, the server rejects the request with an informative error message stating who already owns the account (e.g., *"A company named 'Google' already exists (owned by Alice Rep). Please coordinate with Alice Rep or a Sales Manager to collaborate."*). For Sales Managers, who may intentionally need to manage distinct legal entities with identical names, the system displays an explicit in-modal warning dialog requiring manager confirmation before creating the duplicate.
 
+## Decision 8: Strict Sequential Lifecycle State Machine with Mandatory Backward Reasons
+- **Chose:** A single declarative lookup table (`STAGE_TRANSITIONS`) enforcing strict one-step sequential forward progression (`NEW` -> `QUALIFIED` -> `PROPOSAL` -> `NEGOTIATION`), terminal closure to `WON`/`LOST` exclusively from `NEGOTIATION`, strict one-step backward movement with mandatory recorded explanation reasons, and complete blockage of direct stage edits via generic PUT endpoints.
+- **Rejected:** Allowing arbitrary forward stage skipping (e.g., `NEW` -> `PROPOSAL`), closing deals directly from early stages without negotiation, or permitting backward stage demotions without an explanation note.
+- **Why:** CRM sales pipelines represent a governed sales methodology. Unrestricted stage jumping distorts pipeline velocity and win-probability forecasts (e.g. counting a newly created lead as 75% weighted probability). Backward demotions indicate objections, scope reductions, or budget roadblocks; requiring a recorded explanation preserves the rationale in the deal's immutable timeline audit trail.
+
+## Decision 9: Invariant-Preserving Reopening with Loud Failure on Corrupted State
+- **Chose:** Preserving the pre-closing stage in `deal.previous_stage` upon closing, and requiring Sales Manager authorization to reopen closed deals directly back to `previous_stage` (clearing `closed_at` and `previous_stage`). If `previous_stage` is missing or corrupted, the system immediately raises an HTTP 500 `InternalError` with code `INVARIANT_VIOLATION`.
+- **Rejected:** Silently guessing or defaulting the reopen target to `NEGOTIATION` when `previous_stage` is null.
+- **Why:** Silently defaulting a corrupted state turns an underlying data-integrity bug into a hidden defect. If a deal was closed from an unexpected state or corrupted during a database migration, defaulting masks the issue and creates an invalid pipeline state. Raising a loud, debuggable `INVARIANT_VIOLATION` makes the failure explicit and prevents unverified state transitions.
+
 ---
 
 ### Assumptions & Business Rules
