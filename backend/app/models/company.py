@@ -1,5 +1,5 @@
-"""
-Company model — a company has an owning sales rep.
+﻿"""
+Company model â€” a company has an owning sales rep.
 Supports soft-archive via archived_at timestamp.
 """
 
@@ -33,7 +33,7 @@ class Company(db.Model):
     def is_archived(self):
         return self.archived_at is not None
 
-    def to_dict(self, include_owner=True):
+    def to_dict(self, include_owner=True, include_deals=False):
         """Serialize company to dict."""
         data = {
             'id': self.id,
@@ -52,4 +52,8 @@ class Company(db.Model):
                 'full_name': self.owner.full_name,
                 'email': self.owner.email,
             }
+        if include_deals:
+            data['deals'] = [d.to_dict() for d in self.deals.all()]
         return data
+
+

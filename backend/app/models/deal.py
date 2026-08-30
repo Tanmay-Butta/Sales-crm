@@ -75,7 +75,7 @@ class Deal(db.Model):
     def weighted_value(self):
         return self.value * Decimal(str(self.win_probability))
 
-    def to_dict(self, include_company=False, include_owner=True, include_collaborators=False):
+    def to_dict(self, include_company=False, include_owner=True, include_collaborators=True):
         """Serialize deal to dict."""
         data = {
             'id': self.id,
@@ -115,7 +115,10 @@ class Deal(db.Model):
                     'id': dc.user.id,
                     'full_name': dc.user.full_name,
                     'email': dc.user.email,
+                    'added_by': dc.added_by,
+                    'added_at': dc.created_at.isoformat() if dc.created_at else None,
                 }
                 for dc in self.collaborators.all()
+                if dc.user
             ]
         return data

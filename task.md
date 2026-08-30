@@ -1,0 +1,21 @@
+- `[x]` Backend Implementation
+  - `[x]` Create `backend/app/models/deal.py`
+  - `[x]` Update `backend/app/models/deal_collaborator.py` (with `added_by` FK, `added_at`)
+  - `[x]` Create `backend/app/services/visibility_service.py` (Centralized rules a-d)
+  - `[x]` Update `backend/app/services/company_service.py` & `deal_service.py`
+  - `[x]` Add Collaborator management (`add_collaborator`, `remove_collaborator`)
+  - `[x]` Add Audit Trail logging (`DEAL_CREATED`, `OWNER_CHANGED`, `COLLABORATOR_ADDED`, `COLLABORATOR_REMOVED`)
+  - `[x]` Update routes in `deals.py` and `companies.py`
+  - `[x]` Run Alembic migration for Deal & DealCollaborator models
+- `[x]` Frontend API & Routing
+  - `[x]` Update `frontend/src/api/deals.js` (getMyDeals, addCollaborator, removeCollaborator, getHistory)
+- `[x]` Frontend UI
+  - `[x]` Build `MyDealsPage.jsx` (List, Role badge, Collab & Timeline modals)
+  - `[x]` Update `DealsPage.jsx` (List, Collab modal, Timeline modal, Edit permissions)
+  - `[x]` Update `CompaniesPage.jsx` (Deals filtered with company ownership asymmetry)
+- `[x]` Verification
+  - `[x]` Centralized visibility tests (can_view_company, deals_in_company, visible_deals, my_deals)
+  - `[x]` Collaborator addition, duplicate prevention, manager prevention, owner prevention
+  - `[x]` Collaborator removal & deal editing permissions
+  - `[x]` Immutable audit trail event logging verification
+  - `[x]` Production Vite build verification

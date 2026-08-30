@@ -21,8 +21,8 @@ export default function AppLayout() {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span className="text-sm text-muted">
-              {user?.role === 'SALES_MANAGER' ? '👨‍💼 Manager' : '🧑‍💻 Sales Rep'}
+            <span className="badge badge-gray" style={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>
+              {user?.role === 'SALES_MANAGER' ? 'Sales Manager' : 'Sales Rep'}
             </span>
           </div>
         </header>
