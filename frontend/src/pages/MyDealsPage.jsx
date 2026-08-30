@@ -437,7 +437,7 @@ export default function MyDealsPage() {
                   </div>
                 )}
                 
-                {(!editingDeal || isManager) && (
+                {isManager && (
                   <div className="form-group">
                     <label className="form-label">Assign Sales Rep Owner *</label>
                     <select
