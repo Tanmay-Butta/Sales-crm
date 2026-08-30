@@ -32,6 +32,11 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Only logging stage transitions and owner reassignments.
 - **Why (Intentional Extension):** While spec §9 explicitly mandates stage changes and owner reassignments, logging collaborator modifications adheres to the core philosophy of "History you cannot rewrite". Sales reps frequently collaborate on high-value enterprise deals; maintaining an immutable record of team member additions and removals provides accountability and prevents disputes over deal credit.
 
+## Decision 6: Explicit Access Provenance & Relationship Labeling in UI
+- **Chose:** Providing dedicated "Your Access / Source" provenance badges and filtering tabs across both Companies and All Deals (explicitly differentiating `Deal Owner`, `Collaborator`, `Company Owner (Via [Company Name])`, and `Manager Access`).
+- **Rejected:** Rendering deals and companies without provenance context.
+- **Why:** In an asymmetric visibility model, sales reps see deals and companies from multiple distinct access pathways (e.g., Rep Alice sees Rep Charlie's deal in "All Deals" because Alice owns the parent company *Acme Corp*, even though Alice is not on the deal itself). Without explicit provenance indicators, reps can become confused about why another rep's deal is visible to them or mistakenly assume a permission leak. Explicit access badges clarify the exact authorization path, highlight editability boundaries (read-only for company-owned deals vs editable for owned/collaborated deals), and maintain a professional enterprise CRM aesthetic.
+
 ---
 
 ### Assumptions & Business Rules

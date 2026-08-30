@@ -98,7 +98,7 @@ export default function LoginPage() {
                 setPassword('password123');
               }}
             >
-              👔 Manager Mike
+              Manager Mike
             </button>
             <button
               type="button"
@@ -108,7 +108,7 @@ export default function LoginPage() {
                 setPassword('password123');
               }}
             >
-              💼 Alice (Rep A)
+              Alice (Rep A)
             </button>
             <button
               type="button"
@@ -118,7 +118,7 @@ export default function LoginPage() {
                 setPassword('password123');
               }}
             >
-              💼 Bob (Rep B)
+              Bob (Rep B)
             </button>
           </div>
           <p className="text-xs text-muted" style={{ marginTop: '8px' }}>

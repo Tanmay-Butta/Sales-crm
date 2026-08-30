@@ -1,5 +1,5 @@
-﻿import { useState, useEffect, Fragment } from 'react';
-import { Building2, Plus, Edit2, Archive, RotateCcw, Link as LinkIcon, AlertCircle } from 'lucide-react';
+import { useState, useEffect, Fragment } from 'react';
+import { Building2, Plus, Edit2, Archive, RotateCcw, Link as LinkIcon, AlertCircle, ChevronDown, ChevronRight, User as UserIcon, Users, Handshake } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { companiesAPI } from '../api/companies';
@@ -11,6 +11,7 @@ export default function CompaniesPage() {
   const [reps, setReps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const [filterMode, setFilterMode] = useState('ALL'); // 'ALL' | 'OWNED' | 'VIA_DEALS'
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
@@ -105,12 +106,93 @@ export default function CompaniesPage() {
     }
   };
 
+  // Helper to determine the user's relationship and access source for a company
+  const getCompanyAccessBadge = (company) => {
+    if (isManager) {
+      return (
+        <div>
+          <span className="badge badge-gray">Manager Access</span>
+        </div>
+      );
+    }
+
+    const isCompanyOwner = company.owner_id === user.id;
+    const ownedDeals = (company.deals || []).filter(d => d.owner_id === user.id);
+    const collabDeals = (company.deals || []).filter(d => 
+      d.collaborators && d.collaborators.some(c => c.id === user.id)
+    );
+
+    if (isCompanyOwner) {
+      return (
+        <div>
+          <span className="badge badge-green">
+            Company Owner
+          </span>
+          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+            Full company edit rights
+          </div>
+        </div>
+      );
+    }
+
+    if (ownedDeals.length > 0 && collabDeals.length > 0) {
+      return (
+        <div>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <span className="badge badge-blue">Deal Owner ({ownedDeals.length})</span>
+            <span className="badge badge-purple">Collab ({collabDeals.length})</span>
+          </div>
+          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+            Implicit access via deals
+          </div>
+        </div>
+      );
+    }
+
+    if (ownedDeals.length > 0) {
+      return (
+        <div>
+          <span className="badge badge-blue">Via Deal Owner</span>
+          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+            Owns {ownedDeals.length} deal{ownedDeals.length > 1 ? 's' : ''} in company
+          </div>
+        </div>
+      );
+    }
+
+    if (collabDeals.length > 0) {
+      return (
+        <div>
+          <span className="badge badge-purple">Via Collaboration</span>
+          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+            Collaborates on {collabDeals.length} deal{collabDeals.length > 1 ? 's' : ''}
+          </div>
+        </div>
+      );
+    }
+
+    return <span className="badge badge-gray">Read Only</span>;
+  };
+
+  const getFilteredCompanies = () => {
+    if (isManager || filterMode === 'ALL') return companies;
+    if (filterMode === 'OWNED') {
+      return companies.filter(c => c.owner_id === user.id);
+    }
+    if (filterMode === 'VIA_DEALS') {
+      return companies.filter(c => c.owner_id !== user.id);
+    }
+    return companies;
+  };
+
+  const filteredCompanies = getFilteredCompanies();
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Companies</h1>
-          <p className="page-subtitle">Manage your client companies</p>
+          <p className="page-subtitle">Manage client companies and view associated deals</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
@@ -127,14 +209,42 @@ export default function CompaniesPage() {
         </div>
       </div>
 
+      {/* Filter Tabs for Sales Reps */}
+      {!isManager && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <button 
+            className={`btn btn-sm ${filterMode === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setFilterMode('ALL')}
+          >
+            All Visible ({companies.length})
+          </button>
+          <button 
+            className={`btn btn-sm ${filterMode === 'OWNED' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setFilterMode('OWNED')}
+          >
+            Owned by Me ({companies.filter(c => c.owner_id === user?.id).length})
+          </button>
+          <button 
+            className={`btn btn-sm ${filterMode === 'VIA_DEALS' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setFilterMode('VIA_DEALS')}
+          >
+            Via Deals / Collaborations ({companies.filter(c => c.owner_id !== user?.id).length})
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="loading-page"><div className="spinner" /></div>
-      ) : companies.length === 0 ? (
+      ) : filteredCompanies.length === 0 ? (
         <div className="empty-state">
           <Building2 size={48} className="empty-state-icon" />
           <div className="empty-state-title">No companies found</div>
           <p className="empty-state-text">
-            {showArchived ? "You don't have any companies." : "You don't have any active companies."}
+            {filterMode === 'OWNED' 
+              ? "You don't own any companies directly." 
+              : filterMode === 'VIA_DEALS' 
+              ? "You don't have any deals or collaborations under other reps' companies." 
+              : showArchived ? "You don't have any companies." : "You don't have any active companies."}
           </p>
           <button className="btn btn-secondary mt-4" onClick={openCreateModal}>
             Add your first company
@@ -145,26 +255,54 @@ export default function CompaniesPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Industry</th>
-                <th>Website</th>
-                <th>Owner</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ width: '32px' }}></th>
+                <th>COMPANY NAME</th>
+                <th>YOUR ACCESS / SOURCE</th>
+                <th>INDUSTRY</th>
+                <th>COMPANY OWNER</th>
+                <th>WEBSITE</th>
+                <th>STATUS</th>
+                <th style={{ textAlign: 'right' }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {companies.map((company) => {
-                const canEdit = isManager || company.owner_id === user.id;
+              {filteredCompanies.map((company) => {
+                const isCompanyOwner = company.owner_id === user.id;
+                const canEdit = isManager || isCompanyOwner;
+                const isExpanded = expandedCompanyId === company.id;
+                const dealCount = company.deals?.length || 0;
                 
                 return (
                   <Fragment key={company.id}>
                     <tr 
                       style={{ opacity: company.archived_at ? 0.6 : 1, cursor: 'pointer' }}
-                      onClick={() => setExpandedCompanyId(expandedCompanyId === company.id ? null : company.id)}
+                      onClick={() => setExpandedCompanyId(isExpanded ? null : company.id)}
                     >
-                      <td style={{ fontWeight: 500 }}>{company.name}</td>
+                      <td style={{ paddingRight: '0' }}>
+                        {isExpanded ? <ChevronDown size={16} className="text-primary" /> : <ChevronRight size={16} className="text-muted" />}
+                      </td>
+                      <td style={{ fontWeight: 600, color: 'white' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Building2 size={16} className="text-primary" />
+                          <span>{company.name}</span>
+                          {dealCount > 0 && (
+                            <span className="badge badge-gray text-xs" style={{ fontSize: '10px' }}>
+                              {dealCount} deal{dealCount > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        {getCompanyAccessBadge(company)}
+                      </td>
                       <td>{company.industry}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <UserIcon size={12} className="text-muted" />
+                          <span>{company.owner?.full_name || <span className="text-muted text-danger">No Owner</span>}</span>
+                          {isCompanyOwner && <span className="badge badge-green" style={{ fontSize: '9px', padding: '1px 4px' }}>You</span>}
+                        </div>
+                      </td>
                       <td>
                         {company.website ? (
                           <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
@@ -175,9 +313,6 @@ export default function CompaniesPage() {
                         )}
                       </td>
                       <td>
-                        {company.owner?.full_name || <span className="text-muted text-danger">ERROR: No Owner</span>}
-                      </td>
-                      <td>
                         {company.archived_at ? (
                           <span className="badge badge-archived">Archived</span>
                         ) : (
@@ -186,12 +321,12 @@ export default function CompaniesPage() {
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          {canEdit && (
+                          {canEdit ? (
                             <>
                               <button 
                                 className="btn btn-ghost btn-sm"
                                 onClick={(e) => { e.stopPropagation(); openEditModal(company); }}
-                                title="Edit company"
+                                title="Edit company details"
                               >
                                 <Edit2 size={16} />
                               </button>
@@ -203,40 +338,80 @@ export default function CompaniesPage() {
                                 {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
                               </button>
                             </>
-                          )}
-                          {!canEdit && (
-                            <span className="text-muted text-xs" title="You don't have permission to edit this company">
-                              <AlertCircle size={16} />
+                          ) : (
+                            <span className="text-muted text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="You can view this company because you have deals inside it, but only the company owner can edit company details.">
+                              <AlertCircle size={14} /> Read-only
                             </span>
                           )}
                         </div>
                       </td>
                     </tr>
-                    {expandedCompanyId === company.id && (
+
+                    {/* Expanded Deals Drawer */}
+                    {isExpanded && (
                       <tr className="bg-darker">
-                        <td colSpan="6" style={{ padding: '16px' }}>
-                          <h4 style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--color-text-muted)' }}>Deals for {company.name}</h4>
+                        <td colSpan="8" style={{ padding: '20px 24px', background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                            <div>
+                              <h4 style={{ margin: 0, fontSize: '14px', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Handshake size={16} className="text-primary" />
+                                Deals for {company.name}
+                              </h4>
+                              <p className="text-xs text-muted mt-1">
+                                {isManager || isCompanyOwner 
+                                  ? "As company owner/manager, you see all deals in this company." 
+                                  : "Showing deals you own or collaborate on inside this company."}
+                              </p>
+                            </div>
+                          </div>
+
                           {(!company.deals || company.deals.length === 0) ? (
-                            <div className="text-muted text-sm">No deals associated with this company yet.</div>
+                            <div className="text-muted text-sm p-4 text-center" style={{ background: 'var(--color-bg)', borderRadius: '6px' }}>
+                              No deals associated with this company yet.
+                            </div>
                           ) : (
-                            <table className="table" style={{ background: 'var(--color-bg)' }}>
+                            <table className="table" style={{ background: 'var(--color-bg)', borderRadius: '6px', overflow: 'hidden' }}>
                               <thead>
                                 <tr>
-                                  <th>TITLE</th>
+                                  <th>DEAL TITLE</th>
                                   <th>VALUE</th>
                                   <th>STAGE</th>
-                                  <th>CLOSE DATE</th>
+                                  <th>EXPECTED CLOSE</th>
+                                  <th>DEAL OWNER</th>
+                                  <th>YOUR ROLE</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {company.deals.map(deal => (
-                                  <tr key={deal.id}>
-                                    <td className="font-medium text-white">{deal.title}</td>
-                                    <td className="font-medium">${deal.value}</td>
-                                    <td><span className="badge badge-blue">{deal.stage}</span></td>
-                                    <td>{new Date(deal.expected_close_date).toLocaleDateString()}</td>
-                                  </tr>
-                                ))}
+                                {company.deals.map(deal => {
+                                  const isDealOwner = deal.owner_id === user?.id;
+                                  const isDealCollab = deal.collaborators?.some(c => c.id === user?.id);
+
+                                  return (
+                                    <tr key={deal.id}>
+                                      <td className="font-medium text-white">{deal.title}</td>
+                                      <td className="font-medium">${deal.value}</td>
+                                      <td><span className="badge badge-blue">{deal.stage}</span></td>
+                                      <td>{new Date(deal.expected_close_date).toLocaleDateString()}</td>
+                                      <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <UserIcon size={12} className="text-muted" />
+                                          <span>{deal.owner?.full_name || "Unknown"}</span>
+                                        </div>
+                                      </td>
+                                      <td>
+                                        {isDealOwner ? (
+                                          <span className="badge badge-green">Deal Owner</span>
+                                        ) : isDealCollab ? (
+                                          <span className="badge badge-purple">Collaborator</span>
+                                        ) : isCompanyOwner ? (
+                                          <span className="badge badge-gray">Company Owner View</span>
+                                        ) : (
+                                          <span className="badge badge-gray">Viewer</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           )}
@@ -329,4 +504,3 @@ export default function CompaniesPage() {
     </div>
   );
 }
-

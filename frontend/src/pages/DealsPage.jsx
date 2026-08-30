@@ -15,6 +15,7 @@ export default function DealsPage() {
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterMode, setFilterMode] = useState("ALL"); // 'ALL' | 'MY_DEALS' | 'VIA_COMPANY'
   
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -231,6 +232,55 @@ export default function DealsPage() {
     return `badge ${colors[stage] || 'badge-gray'}`;
   };
 
+  // Helper to determine why the current user sees this deal
+  const getUserAccessBadge = (deal) => {
+    if (deal.owner_id === user.id) {
+      return (
+        <div>
+          <span className="badge badge-green">Deal Owner</span>
+        </div>
+      );
+    }
+    if (deal.collaborators && deal.collaborators.some(c => c.id === user.id)) {
+      return (
+        <div>
+          <span className="badge badge-purple">Collaborator</span>
+        </div>
+      );
+    }
+    if (deal.company && deal.company.owner_id === user.id) {
+      return (
+        <div>
+          <span className="badge badge-blue">Company Owner</span>
+          <div className="text-xs text-muted" style={{ marginTop: '2px' }}>
+            Via {deal.company?.name}
+          </div>
+        </div>
+      );
+    }
+    if (isManager) {
+      return (
+        <div>
+          <span className="badge badge-gray">Manager Access</span>
+        </div>
+      );
+    }
+    return <span className="badge badge-gray">Viewer</span>;
+  };
+
+  const getFilteredDeals = () => {
+    if (isManager || filterMode === "ALL") return deals;
+    if (filterMode === "MY_DEALS") {
+      return deals.filter(d => d.owner_id === user?.id || d.collaborators?.some(c => c.id === user?.id));
+    }
+    if (filterMode === "VIA_COMPANY") {
+      return deals.filter(d => d.owner_id !== user?.id && !d.collaborators?.some(c => c.id === user?.id));
+    }
+    return deals;
+  };
+
+  const filteredDeals = getFilteredDeals();
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -246,14 +296,44 @@ export default function DealsPage() {
         </div>
       </div>
 
+      {/* Filter Tabs for Sales Reps */}
+      {!isManager && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <button 
+            className={`btn btn-sm ${filterMode === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setFilterMode('ALL')}
+          >
+            All Visible Deals ({deals.length})
+          </button>
+          <button 
+            className={`btn btn-sm ${filterMode === 'MY_DEALS' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setFilterMode('MY_DEALS')}
+          >
+            My Deals & Collaborations ({deals.filter(d => d.owner_id === user?.id || d.collaborators?.some(c => c.id === user?.id)).length})
+          </button>
+          <button 
+            className={`btn btn-sm ${filterMode === 'VIA_COMPANY' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setFilterMode('VIA_COMPANY')}
+          >
+            Via Company Ownership ({deals.filter(d => d.owner_id !== user?.id && !d.collaborators?.some(c => c.id === user?.id)).length})
+          </button>
+        </div>
+      )}
+
       <div className="card table-container">
         {loading ? (
           <div className="p-8 text-center text-muted">Loading deals...</div>
-        ) : deals.length === 0 ? (
+        ) : filteredDeals.length === 0 ? (
           <div className="empty-state">
             <Handshake size={48} className="text-muted mb-4" />
             <h3>No deals found</h3>
-            <p className="text-muted">Get started by creating a new deal in the pipeline.</p>
+            <p className="text-muted">
+              {filterMode === 'MY_DEALS'
+                ? "You are not an owner or collaborator on any deals yet."
+                : filterMode === 'VIA_COMPANY'
+                ? "No deals belong to teammates under your owned companies."
+                : "Get started by creating a new deal in the pipeline."}
+            </p>
             <button className="btn btn-primary mt-4" onClick={openNewModal}>
               Create First Deal
             </button>
@@ -267,14 +347,16 @@ export default function DealsPage() {
                 <th>VALUE</th>
                 <th>CLOSE DATE</th>
                 <th>STAGE</th>
-                <th>OWNER / TEAM</th>
+                <th>DEAL OWNER</th>
+                <th>YOUR ACCESS</th>
                 <th className="text-right">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {deals.map(deal => {
+              {filteredDeals.map(deal => {
                 const isOwner = deal.owner_id === user.id;
                 const isCollab = deal.collaborators?.some(c => c.id === user.id);
+                const isCompanyOwner = deal.company && deal.company.owner_id === user.id;
                 const canEdit = isManager || isOwner || isCollab;
                 const canManageCollabs = isManager || isOwner;
                 const canDelete = isManager || isOwner;
@@ -300,15 +382,16 @@ export default function DealsPage() {
                         <div className="flex items-center gap-2 text-sm">
                           <UserIcon size={12} className="text-muted" />
                           <span>{deal.owner?.full_name || "Unknown"}</span>
-                          {isOwner && <span className="badge badge-green text-xs" style={{ padding: '1px 4px', fontSize: '10px' }}>Owner</span>}
-                          {isCollab && <span className="badge badge-purple text-xs" style={{ padding: '1px 4px', fontSize: '10px' }}>Collaborator</span>}
                         </div>
                         {deal.collaborators && deal.collaborators.length > 0 && (
                           <div className="text-xs text-muted" title={deal.collaborators.map(c => c.full_name).join(', ')}>
-                            👥 {deal.collaborators.length} collaborator{deal.collaborators.length > 1 ? 's' : ''}
+                            +{deal.collaborators.length} collaborator{deal.collaborators.length > 1 ? 's' : ''}
                           </div>
                         )}
                       </div>
+                    </td>
+                    <td>
+                      {getUserAccessBadge(deal)}
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-2">
@@ -322,8 +405,8 @@ export default function DealsPage() {
                             <Edit2 size={16} />
                           </button>
                         ) : (
-                          <span className="text-muted text-xs" title="You don't have permission to edit this deal">
-                            <AlertCircle size={16} />
+                          <span className="text-muted text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="Read-only: You can view this deal because you own the parent company, but only the deal owner/collaborator can edit deal details.">
+                            <AlertCircle size={14} /> Read-only
                           </span>
                         )}
 
