@@ -1,4 +1,4 @@
-﻿"""
+"""
 Company service - Business logic for Companies.
 Enforces invariants:
 1. Sales Reps can only view/manage companies they own.
@@ -15,35 +15,26 @@ from app.models.user import User
 from app.utils.constants import Roles, ErrorCodes
 from app.utils.exceptions import AuthorizationError, ValidationError, NotFoundError
 
-def get_companies(current_user, show_archived=False):
-    query = Company.query
-    if not show_archived:
-        query = query.filter_by(archived_at=None)
+from app.services import visibility_service
 
-    if current_user.role == Roles.SALES_REP:
-        query = query.filter(
-            db.or_(
-                Company.owner_id == current_user.id,
-                Company.id.in_(
-                    db.session.query(Deal.company_id).filter_by(owner_id=current_user.id)
-                )
-            )
-        )
-    
-    return query.order_by(Company.name).all()
+def get_companies(current_user, show_archived=False):
+    """Get all companies visible to the current user."""
+    return visibility_service.get_visible_companies_query(current_user, show_archived).order_by(Company.name).all()
 
 def get_company(current_user, company_id):
+    """Get a specific company, checking visibility permissions."""
     company = Company.query.get(company_id)
     if not company:
-        raise NotFoundError("Company not found", code=ErrorCodes.NOT_FOUND)
+        raise NotFoundError("Company not found", code=ErrorCodes.COMPANY_NOT_FOUND)
     
-    if current_user.role == Roles.SALES_REP:
-        owns_company = company.owner_id == current_user.id
-        owns_deal = db.session.query(Deal.id).filter_by(company_id=company_id, owner_id=current_user.id).first() is not None
-        if not (owns_company or owns_deal):
-            raise AuthorizationError("You don't have access to this company")
+    if not visibility_service.can_view_company(current_user, company):
+        raise AuthorizationError("You don't have access to this company")
         
     return company
+
+def get_company_deals(current_user, company_id):
+    """Get deals within a company visible to the current user (enforcing asymmetry)."""
+    return visibility_service.get_deals_in_company_query(current_user, company_id).order_by(Deal.created_at.desc()).all()
 
 def _validate_owner(owner_id):
     owner = User.query.get(owner_id)

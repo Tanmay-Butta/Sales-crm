@@ -1,6 +1,6 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { 
-  Handshake, Plus, Edit2, Trash2, AlertCircle, Building2, User as UserIcon 
+  Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -14,7 +14,6 @@ export default function DealsPage() {
   const [deals, setDeals] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
-  
   const [loading, setLoading] = useState(true);
   
   // Modal state
@@ -29,6 +28,16 @@ export default function DealsPage() {
   });
   const [submitting, setSubmitting] = useState(false);
 
+  // Collaborators Modal state
+  const [collabModalDeal, setCollabModalDeal] = useState(null);
+  const [selectedRepId, setSelectedRepId] = useState("");
+  const [collabLoading, setCollabLoading] = useState(false);
+
+  // History / Audit Trail Modal state
+  const [historyModalDeal, setHistoryModalDeal] = useState(null);
+  const [historyEvents, setHistoryEvents] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   useEffect(() => {
     fetchData();
   }, [isManager]);
@@ -39,16 +48,12 @@ export default function DealsPage() {
       const [dealsRes, companiesRes, repsRes] = await Promise.all([
         dealsAPI.getDeals(),
         companiesAPI.getCompanies(),
-        isManager ? authAPI.getReps() : Promise.resolve({ data: { users: [] } })
+        authAPI.getReps()
       ]);
       
       setDeals(dealsRes.data.deals);
-      // Only active companies can have deals created for them
       setCompanies(companiesRes.data.companies.filter(c => !c.archived_at));
-      
-      if (isManager) {
-        setReps(repsRes.data.users);
-      }
+      setReps(repsRes.data.users);
     } catch (err) {
       toast.error("Failed to load deals data");
       console.error(err);
@@ -101,8 +106,6 @@ export default function DealsPage() {
     
     try {
       const payload = { ...formData };
-      
-      // Convert to types
       payload.company_id = parseInt(payload.company_id, 10);
       payload.value = parseFloat(payload.value);
       
@@ -110,7 +113,6 @@ export default function DealsPage() {
       else if (payload.owner_id) payload.owner_id = parseInt(payload.owner_id, 10);
 
       if (editingDeal) {
-        // Exclude company_id and owner_id for basic edit (Phase 3A limits)
         const updatePayload = {
           title: payload.title,
           value: payload.value,
@@ -144,7 +146,68 @@ export default function DealsPage() {
       toast.success("Deal deleted");
       fetchData();
     } catch (err) {
-      toast.error("Failed to delete deal");
+      const message = err.response?.data?.error?.message || "Failed to delete deal";
+      toast.error(message);
+    }
+  };
+
+  // Collaborators Management
+  const openCollaboratorsModal = (deal) => {
+    setCollabModalDeal(deal);
+    setSelectedRepId("");
+  };
+
+  const handleAddCollaborator = async (e) => {
+    e.preventDefault();
+    if (!selectedRepId) return;
+
+    setCollabLoading(true);
+    try {
+      await dealsAPI.addCollaborator(collabModalDeal.id, parseInt(selectedRepId, 10));
+      toast.success("Collaborator added successfully");
+      setSelectedRepId("");
+      
+      const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
+      setCollabModalDeal(updatedDealRes.data.deal);
+      fetchData();
+    } catch (err) {
+      const message = err.response?.data?.error?.message || "Failed to add collaborator";
+      toast.error(message);
+    } finally {
+      setCollabLoading(false);
+    }
+  };
+
+  const handleRemoveCollaborator = async (userId) => {
+    if (!window.confirm("Remove this collaborator from the deal?")) return;
+    
+    setCollabLoading(true);
+    try {
+      await dealsAPI.removeCollaborator(collabModalDeal.id, userId);
+      toast.success("Collaborator removed");
+      
+      const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
+      setCollabModalDeal(updatedDealRes.data.deal);
+      fetchData();
+    } catch (err) {
+      const message = err.response?.data?.error?.message || "Failed to remove collaborator";
+      toast.error(message);
+    } finally {
+      setCollabLoading(false);
+    }
+  };
+
+  // History / Audit Trail
+  const openHistoryModal = async (deal) => {
+    setHistoryModalDeal(deal);
+    setHistoryLoading(true);
+    try {
+      const res = await dealsAPI.getHistory(deal.id);
+      setHistoryEvents(res.data.history);
+    } catch (err) {
+      toast.error("Failed to load deal audit trail");
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -173,7 +236,7 @@ export default function DealsPage() {
       <div className="page-header">
         <div>
           <h2>All Deals</h2>
-          <p className="text-muted">Manage your sales pipeline</p>
+          <p className="text-muted">Manage your sales pipeline across all visible companies</p>
         </div>
         
         <div className="page-actions">
@@ -204,13 +267,17 @@ export default function DealsPage() {
                 <th>VALUE</th>
                 <th>CLOSE DATE</th>
                 <th>STAGE</th>
-                <th>OWNER</th>
+                <th>OWNER / TEAM</th>
                 <th className="text-right">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
               {deals.map(deal => {
-                const canEdit = isManager || deal.owner_id === user.id;
+                const isOwner = deal.owner_id === user.id;
+                const isCollab = deal.collaborators?.some(c => c.id === user.id);
+                const canEdit = isManager || isOwner || isCollab;
+                const canManageCollabs = isManager || isOwner;
+                const canDelete = isManager || isOwner;
                 
                 return (
                   <tr key={deal.id}>
@@ -229,34 +296,66 @@ export default function DealsPage() {
                       </span>
                     </td>
                     <td>
-                      <div className="flex items-center gap-2">
-                        <UserIcon size={14} className="text-muted" />
-                        {deal.owner?.full_name || "Unknown"}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <UserIcon size={12} className="text-muted" />
+                          <span>{deal.owner?.full_name || "Unknown"}</span>
+                          {isOwner && <span className="badge badge-green text-xs" style={{ padding: '1px 4px', fontSize: '10px' }}>Owner</span>}
+                          {isCollab && <span className="badge badge-purple text-xs" style={{ padding: '1px 4px', fontSize: '10px' }}>Collaborator</span>}
+                        </div>
+                        {deal.collaborators && deal.collaborators.length > 0 && (
+                          <div className="text-xs text-muted" title={deal.collaborators.map(c => c.full_name).join(', ')}>
+                            👥 {deal.collaborators.length} collaborator{deal.collaborators.length > 1 ? 's' : ''}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-2">
+                        {/* Edit Deal (Manager, Owner, or Collaborator) */}
                         {canEdit ? (
-                          <>
-                            <button 
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => openEditModal(deal)}
-                              title="Edit Deal"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <button 
-                              className="btn btn-ghost btn-sm text-red"
-                              onClick={() => handleDelete(deal.id)}
-                              title="Delete Deal"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
+                          <button 
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => openEditModal(deal)}
+                            title="Edit Deal Details"
+                          >
+                            <Edit2 size={16} />
+                          </button>
                         ) : (
                           <span className="text-muted text-xs" title="You don't have permission to edit this deal">
                             <AlertCircle size={16} />
                           </span>
+                        )}
+
+                        {/* Manage Collaborators (Manager or Owner only) */}
+                        {canManageCollabs && (
+                          <button 
+                            className="btn btn-ghost btn-sm text-primary"
+                            onClick={() => openCollaboratorsModal(deal)}
+                            title="Manage Collaborators"
+                          >
+                            <Users size={16} />
+                          </button>
+                        )}
+
+                        {/* View Audit Trail Timeline */}
+                        <button 
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => openHistoryModal(deal)}
+                          title="View Deal Timeline"
+                        >
+                          <History size={16} />
+                        </button>
+
+                        {/* Delete Deal (Manager or Owner only) */}
+                        {canDelete && (
+                          <button 
+                            className="btn btn-ghost btn-sm text-red"
+                            onClick={() => handleDelete(deal.id)}
+                            title="Delete Deal"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         )}
                       </div>
                     </td>
@@ -336,7 +435,7 @@ export default function DealsPage() {
                   </div>
                 )}
                 
-                {(!editingDeal || isManager) && (
+                {isManager && (
                   <div className="form-group">
                     <label className="form-label">Assign Sales Rep Owner *</label>
                     <select
@@ -368,10 +467,173 @@ export default function DealsPage() {
           </div>
         </div>
       )}
+
+      {/* Collaborators Management Modal */}
+      {collabModalDeal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setCollabModalDeal(null); }}>
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <h3>Manage Collaborators</h3>
+                <p className="text-muted text-xs mt-1">{collabModalDeal.title}</p>
+              </div>
+              <button className="modal-close" onClick={() => setCollabModalDeal(null)}>✕</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="mb-4">
+                <label className="form-label text-xs text-muted">PRIMARY OWNER</label>
+                <div style={{ padding: '8px 12px', background: 'var(--color-bg)', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <UserIcon size={16} className="text-primary" />
+                  <span className="font-medium text-white">{collabModalDeal.owner?.full_name}</span>
+                  <span className="badge badge-green ml-auto">Owner</span>
+                </div>
+              </div>
+
+              {/* Add Collaborator Form */}
+              <form onSubmit={handleAddCollaborator} style={{ marginBottom: '20px' }}>
+                <label className="form-label">Add Sales Rep Collaborator</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select 
+                    className="form-select"
+                    value={selectedRepId}
+                    onChange={(e) => setSelectedRepId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select a sales rep...</option>
+                    {reps
+                      .filter(r => r.id !== collabModalDeal.owner_id && !collabModalDeal.collaborators?.some(c => c.id === r.id))
+                      .map(rep => (
+                        <option key={rep.id} value={rep.id}>{rep.full_name} ({rep.email})</option>
+                      ))}
+                  </select>
+                  <button type="submit" className="btn btn-primary" disabled={collabLoading || !selectedRepId}>
+                    <UserPlus size={16} /> Add
+                  </button>
+                </div>
+              </form>
+
+              {/* Active Collaborators List */}
+              <div>
+                <label className="form-label text-xs text-muted">CURRENT COLLABORATORS ({collabModalDeal.collaborators?.length || 0})</label>
+                {(!collabModalDeal.collaborators || collabModalDeal.collaborators.length === 0) ? (
+                  <div className="text-muted text-sm text-center p-4" style={{ background: 'var(--color-bg)', borderRadius: '6px' }}>
+                    No collaborators added to this deal yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {collabModalDeal.collaborators.map(c => (
+                      <div 
+                        key={c.id} 
+                        style={{ 
+                          padding: '8px 12px', 
+                          background: 'var(--color-bg)', 
+                          borderRadius: '6px', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between' 
+                        }}
+                      >
+                        <div>
+                          <div className="font-medium text-white">{c.full_name}</div>
+                          <div className="text-xs text-muted">{c.email}</div>
+                        </div>
+                        <button 
+                          className="btn btn-ghost btn-sm text-red"
+                          onClick={() => handleRemoveCollaborator(c.id)}
+                          disabled={collabLoading}
+                          title="Remove Collaborator"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setCollabModalDeal(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History / Audit Trail Timeline Modal */}
+      {historyModalDeal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalDeal(null); }}>
+          <div className="modal" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <div>
+                <h3>Deal Audit Timeline</h3>
+                <p className="text-muted text-xs mt-1">{historyModalDeal.title} (Immutable History)</p>
+              </div>
+              <button className="modal-close" onClick={() => setHistoryModalDeal(null)}>✕</button>
+            </div>
+            
+            <div className="modal-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {historyLoading ? (
+                <div className="text-center p-4 text-muted">Loading history...</div>
+              ) : historyEvents.length === 0 ? (
+                <div className="text-muted text-center p-4">No history records found.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {historyEvents.map(h => (
+                    <div 
+                      key={h.id} 
+                      style={{ 
+                        borderLeft: '3px solid var(--color-primary)', 
+                        padding: '8px 12px', 
+                        background: 'var(--color-bg)', 
+                        borderRadius: '0 6px 6px 0' 
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span className="badge badge-blue text-xs">{h.event_type}</span>
+                        <span className="text-xs text-muted">{new Date(h.created_at).toLocaleString()}</span>
+                      </div>
+                      
+                      <div className="text-sm text-white">
+                        {h.event_type === 'DEAL_CREATED' && (
+                          <span>Created deal with initial stage <strong>{h.new_value?.stage}</strong> and value <strong>${h.new_value?.value}</strong></span>
+                        )}
+                        {h.event_type === 'OWNER_CHANGED' && (
+                          <span>Reassigned owner from <strong>{h.old_value?.owner_name || h.old_value?.owner_id}</strong> to <strong>{h.new_value?.owner_name || h.new_value?.owner_id}</strong></span>
+                        )}
+                        {h.event_type === 'COLLABORATOR_ADDED' && (
+                          <span>Added collaborator <strong>{h.new_value?.user_name}</strong></span>
+                        )}
+                        {h.event_type === 'COLLABORATOR_REMOVED' && (
+                          <span>Removed collaborator <strong>{h.old_value?.user_name}</strong></span>
+                        )}
+                        {h.event_type === 'STAGE_CHANGED' && (
+                          <span>Stage changed from {h.old_value?.stage} to {h.new_value?.stage}</span>
+                        )}
+                        {h.event_type === 'STAGE_BACKWARD' && (
+                          <span>Stage moved back: {h.old_value?.stage} → {h.new_value?.stage} (Reason: {h.reason})</span>
+                        )}
+                      </div>
+                      
+                      <div className="text-xs text-muted mt-1">
+                        By: {h.actor?.full_name || `User #${h.actor_id}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setHistoryModalDeal(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-
-
-

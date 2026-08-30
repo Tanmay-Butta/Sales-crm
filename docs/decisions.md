@@ -1,44 +1,39 @@
-﻿# Decisions
+# Decisions
 
-Log the decisions that actually shaped this codebase â€” the ones where a real alternative existed and
+Log the decisions that actually shaped this codebase — the ones where a real alternative existed and
 you picked one. At least five entries. For each: what you chose, what you rejected, and why. At least
-one entry must be a decision you later reversed â€” say what changed your mind. It can be any entry
-below, not necessarily the last one; add a **Later reversed:** line to whichever one it is.
+one entry must be a decision you later reversed — say what changed your mind.
 
-## Decision 1
+## Decision 1: Session Storage over Local Storage for JWT Auth
+- **Chose:** Storing JWT tokens and authenticated user state in `sessionStorage`.
+- **Rejected:** Using `localStorage` or server-set HTTP-only cookies without tab separation.
+- **Why:** In real-world enterprise CRM evaluation and daily sales operations, testing and switching between different roles (Sales Manager vs Sales Reps) simultaneously in side-by-side browser tabs is essential. `localStorage` synchronizes across all browser tabs, causing logins in one tab to silently overwrite active sessions in another tab, leading to confusing 403/401 errors. `sessionStorage` provides complete tab isolation while remaining straightforward to implement.
+- **Later reversed:** Initially implemented authentication using `localStorage` during initial scaffolding, but reversed to `sessionStorage` as soon as multi-role RBAC testing began across tabs.
 
-- **Chose:**
-- **Rejected:**
-- **Why:**
+## Decision 2: Company vs Deal Visibility Asymmetry (Centralized Visibility Model)
+- **Chose:** Centralizing all visibility filtering in `visibility_service.py` with asymmetric rules:
+  1. Owning a company grants visibility to *all* deals in that company.
+  2. Owning or collaborating on a deal grants implicit read-only visibility to the *parent company*, but only grants visibility to *their own deals* within that company (not teammates' deals).
+- **Rejected:** Symmetric visibility ("if you can see the company, you can see all deals inside it") and manual ad-hoc filtering across different route handlers.
+- **Why:** The README states reps only see companies/deals they own or collaborate on. If a manager reassigns a deal to Rep B under a company owned by Rep A, Rep B needs to see the company to know whom they are selling to, but Rep B should not see other unrelated deals owned by Rep A in that company. Centralizing this logic into one shared service prevents discrepancies between global search, company pages, and reporting.
 
-## Decision 2
+## Decision 3: Narrow "My Deals" vs Wide "Visible Deals" Query Separation
+- **Chose:** Implementing `get_my_deals_query()` as strictly `owner_id == user.id OR user in collaborators`, completely separate from `get_visible_deals_query()` which also includes company-owned deals.
+- **Rejected:** Reusing the same deal list query for both the global search/dashboard and the personal "My Deals" page.
+- **Why:** Spec §5 requires a personal list of every deal where a rep is an owner or collaborator. A rep who owns an overarching company account but is not an owner/collaborator on an individual teammate's deal should not have their personal daily workload queue cluttered with that deal.
 
-- **Chose:**
-- **Rejected:**
-- **Why:**
+## Decision 4: Strict Collaborator Scoping & Blocking Owner Self-Collaboration
+- **Chose:** Enforcing server-side validation that collaborators must be `SALES_REP`s, cannot be the deal's primary owner, and cannot be added by anyone other than the deal owner or sales manager.
+- **Rejected:** Allowing managers as collaborators or allowing deal owners to add themselves as collaborators.
+- **Why:** Managers already have unrestricted access to all deals across the platform; adding them to collaborator lists produces redundant records and pollutes team lists. Similarly, a deal's primary owner already has full rights; adding them as a collaborator creates ambiguous permission states and data duplication.
 
-## Decision 3
+## Decision 5: Collaborator Audit Trail Logging Extension
+- **Chose:** Logging `COLLABORATOR_ADDED` and `COLLABORATOR_REMOVED` events into the immutable `deal_history` table alongside `DEAL_CREATED` and `OWNER_CHANGED`.
+- **Rejected:** Only logging stage transitions and owner reassignments.
+- **Why (Intentional Extension):** While spec §9 explicitly mandates stage changes and owner reassignments, logging collaborator modifications adheres to the core philosophy of "History you cannot rewrite". Sales reps frequently collaborate on high-value enterprise deals; maintaining an immutable record of team member additions and removals provides accountability and prevents disputes over deal credit.
 
-- **Chose:**
-- **Rejected:**
-- **Why:**
-
-## Decision 4
-
-- **Chose:**
-- **Rejected:**
-- **Why:**
-
-## Decision 5
-
-- **Chose:**
-- **Rejected:**
-- **Why:**
+---
 
 ### Assumptions & Business Rules
 - **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is rejected server-side to prevent accumulating new pipeline on dead accounts.
-
-- **Session Storage over Local Storage**: Initially,i used localStorage to store the JWT access token. However, because this application heavily relies on strict Role-Based Access Control (RBAC), reviewers and developers need to test multiple roles (Sales Manager vs Sales Reps) simultaneously. localStorage is shared across all tabs, meaning logging in as a Rep in one tab would silently overwrite the Manager's token in another tab, causing confusing cross-tab authorization errors during testing. I switched to sessionStorage so that each browser tab maintains a completely isolated session, allowing side-by-side role testing, as well as providing a better real-world user experience for employees who may need to manage multiple accounts simultaneously without cross-tab session collisions.
--**assumption for companies**:
-Company owner must be a Sales Rep, never a Manager
-- **Implicit Company Visibility**: The requirement states Sales reps... can see only the companies and deals they own or collaborate on. I interpret this to mean that owning a Deal (or collaborating on a Deal) implicitly grants the Rep **read-only visibility** to the parent Company. If a Manager reassigns a deal to Rep XYZ, Rep XYZ will be able to see the parent company in their Companies list (so they know who they are selling to), but they will not be able to edit or archive the company unless they are the direct owner of the company itself.
+- **Company Ownership Rule**: Company owners must always be Sales Reps, never Sales Managers (Managers oversee the whole pipeline but don't hold individual quota).
