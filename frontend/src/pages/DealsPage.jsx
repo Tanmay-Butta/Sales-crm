@@ -289,6 +289,35 @@ export default function DealsPage() {
     }
   };
 
+  // Dropdown Stage Selection Change Handler
+  const handleStageSelectChange = async (deal, targetStage) => {
+    if (!targetStage || targetStage === deal.stage) return;
+
+    if (targetStage === 'REOPEN') {
+      handleReopenDeal(deal);
+      return;
+    }
+
+    // Check if target is a backward open stage - open modal to collect reason
+    const stageOrder = ['NEW', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION'];
+    const currentIdx = stageOrder.indexOf(deal.stage);
+    const targetIdx = stageOrder.indexOf(targetStage);
+
+    if (currentIdx !== -1 && targetIdx !== -1 && targetIdx < currentIdx) {
+      openBackwardModal(deal, targetStage);
+      return;
+    }
+
+    // Direct transition attempt (backend strictly validates forward 1-step, closing rules, and closed deals)
+    try {
+      await dealsAPI.changeStage(deal.id, targetStage);
+      toast.success(`Deal moved to ${targetStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to update deal stage");
+    }
+  };
+
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -469,7 +498,7 @@ export default function DealsPage() {
                     </td>
                     <td>{new Date(deal.expected_close_date).toLocaleDateString()}</td>
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '180px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span className={getStageBadge(deal.stage)}>
                             {deal.stage} ({getProbabilityLabel(deal.stage)})
@@ -481,106 +510,31 @@ export default function DealsPage() {
                           )}
                         </div>
 
-                        {/* Quick Lifecycle Stage Transition Actions */}
-                        {canEdit && !deal.is_closed && (
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {deal.stage === 'NEW' && (
-                              <button 
-                                className="btn btn-xs btn-primary" 
-                                style={{ padding: '2px 8px', fontSize: '11px' }}
-                                onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
-                                title="Advance to Qualified"
-                              >
-                                Advance <ArrowRight size={12} />
-                              </button>
-                            )}
-
-                            {deal.stage === 'QUALIFIED' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'NEW'); }}
-                                  title="Move back to New (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
-                                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'PROPOSAL'); }}
-                                  title="Advance to Proposal"
-                                >
-                                  Advance <ArrowRight size={12} />
-                                </button>
-                              </>
-                            )}
-
-                            {deal.stage === 'PROPOSAL' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'QUALIFIED'); }}
-                                  title="Move back to Qualified (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
-                                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'NEGOTIATION'); }}
-                                  title="Advance to Negotiation"
-                                >
-                                  Advance <ArrowRight size={12} />
-                                </button>
-                              </>
-                            )}
-
-                            {deal.stage === 'NEGOTIATION' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'PROPOSAL'); }}
-                                  title="Move back to Proposal (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs" 
-                                  style={{ background: '#10b981', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
-                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'WON'); }}
-                                  title="Mark deal Won"
-                                >
-                                  <CheckCircle2 size={12} /> Won
-                                </button>
-                                <button 
-                                  className="btn btn-xs" 
-                                  style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
-                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'LOST'); }}
-                                  title="Mark deal Lost"
-                                >
-                                  <XCircle size={12} /> Lost
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Reopen button for Sales Manager when deal is closed */}
-                        {isManager && deal.is_closed && (
-                          <div>
-                            <button 
-                              className="btn btn-xs btn-ghost text-primary" 
-                              style={{ border: '1px solid var(--color-primary)', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              onClick={(e) => { e.stopPropagation(); handleReopenDeal(deal); }}
-                              title={`Reopen deal to ${deal.previous_stage || 'Negotiation'}`}
-                            >
-                              <RotateCcw size={12} /> Reopen Deal
-                            </button>
-                          </div>
-                        )}
+                        {/* Interactive Stage Dropdown */}
+                        <select
+                          className="form-select"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.8rem',
+                            borderRadius: '6px',
+                            background: 'var(--color-bg)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text)',
+                            cursor: 'pointer',
+                            width: '100%'
+                          }}
+                          value={deal.stage}
+                          onChange={(e) => handleStageSelectChange(deal, e.target.value)}
+                          title="Select target stage to advance, step back, close, or test transition rules"
+                        >
+                          <option value="NEW">NEW (10%)</option>
+                          <option value="QUALIFIED">QUALIFIED (25%)</option>
+                          <option value="PROPOSAL">PROPOSAL (50%)</option>
+                          <option value="NEGOTIATION">NEGOTIATION (75%)</option>
+                          <option value="WON">🏆 WON (100%)</option>
+                          <option value="LOST">❌ LOST (0%)</option>
+                          <option value="REOPEN">🔄 Reopen Deal</option>
+                        </select>
                       </div>
                     </td>
                     <td>
@@ -601,31 +555,23 @@ export default function DealsPage() {
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-2">
-                        {/* Edit Deal (Manager, Owner, or Collaborator) */}
-                        {canEdit ? (
-                          <button 
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => openEditModal(deal)}
-                            title="Edit Deal Details"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        ) : (
-                          <span className="text-muted text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="Read-only: You can view this deal because you own the parent company, but only the deal owner/collaborator can edit deal details.">
-                            <AlertCircle size={14} /> Read-only
-                          </span>
-                        )}
+                        {/* Edit Deal (Enabled for all so viewers/collaborators can test authorization) */}
+                        <button 
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => openEditModal(deal)}
+                          title="Edit Deal Details"
+                        >
+                          <Edit2 size={16} />
+                        </button>
 
-                        {/* Manage Collaborators (Manager or Owner only) */}
-                        {canManageCollabs && (
-                          <button 
-                            className="btn btn-ghost btn-sm text-primary"
-                            onClick={() => openCollaboratorsModal(deal)}
-                            title="Manage Collaborators"
-                          >
-                            <Users size={16} />
-                          </button>
-                        )}
+                        {/* Manage Collaborators (Enabled for all so non-owners can test authorization) */}
+                        <button 
+                          className="btn btn-ghost btn-sm text-primary"
+                          onClick={() => openCollaboratorsModal(deal)}
+                          title="Manage Collaborators"
+                        >
+                          <Users size={16} />
+                        </button>
 
                         {/* View Audit Trail Timeline */}
                         <button 
@@ -636,16 +582,14 @@ export default function DealsPage() {
                           <History size={16} />
                         </button>
 
-                        {/* Delete Deal (Manager or Owner only) */}
-                        {canDelete && (
-                          <button 
-                            className="btn btn-ghost btn-sm text-red"
-                            onClick={() => handleDelete(deal.id)}
-                            title="Delete Deal"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
+                        {/* Delete Deal (Enabled for all so non-owners can test authorization) */}
+                        <button 
+                          className="btn btn-ghost btn-sm text-red"
+                          onClick={() => handleDelete(deal.id)}
+                          title="Delete Deal"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -724,48 +668,45 @@ export default function DealsPage() {
                   </div>
                 )}
                 
-                {isManager && (
-                  <div className="form-group">
-                    <label className="form-label">Assign Sales Rep Owner *</label>
-                    <select
-                      name="owner_id"
-                      className="form-select"
-                      value={formData.owner_id}
-                      onChange={handleInputChange}
-                      required
-                    >
-                      <option value="">Select a rep...</option>
-                      {reps.map(r => (
-                        <option key={r.id} value={r.id}>{r.full_name}</option>
-                      ))}
-                    </select>
-                    <p className="form-hint">Managers cannot own deals. You must assign a Sales Rep.</p>
+                <div className="form-group">
+                  <label className="form-label">Assign Sales Rep Owner *</label>
+                  <select
+                    name="owner_id"
+                    className="form-select"
+                    value={formData.owner_id}
+                    onChange={handleInputChange}
+                  >
+                    <option value="">Select a rep...</option>
+                    {reps.map(r => (
+                      <option key={r.id} value={r.id}>{r.full_name}</option>
+                    ))}
+                  </select>
+                  <p className="form-hint">Managers can assign/reassign owners. Non-managers will be rejected by backend with 403.</p>
 
-                    {editingDeal && formData.owner_id && parseInt(formData.owner_id, 10) !== editingDeal.owner_id && (
-                      <div style={{
-                        background: 'rgba(99, 102, 241, 0.1)',
-                        border: '1px solid rgba(99, 102, 241, 0.25)',
-                        borderRadius: '6px',
-                        padding: '10px 12px',
-                        marginTop: '10px'
-                      }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text)' }}>
-                          <input
-                            type="checkbox"
-                            checked={keepPreviousOwner}
-                            onChange={(e) => setKeepPreviousOwner(e.target.checked)}
-                          />
-                          <span>Keep previous owner (<strong>{editingDeal.owner?.full_name}</strong>) as a collaborator</span>
-                        </label>
-                        <p className="text-xs text-muted" style={{ margin: '4px 0 0 24px' }}>
-                          {keepPreviousOwner
-                            ? `${editingDeal.owner?.full_name} will remain on this deal as an active collaborator.`
-                            : `${editingDeal.owner?.full_name} will be removed from this deal entirely.`}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                  {editingDeal && formData.owner_id && parseInt(formData.owner_id, 10) !== editingDeal.owner_id && (
+                    <div style={{
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      borderRadius: '6px',
+                      padding: '10px 12px',
+                      marginTop: '10px'
+                    }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text)' }}>
+                        <input
+                          type="checkbox"
+                          checked={keepPreviousOwner}
+                          onChange={(e) => setKeepPreviousOwner(e.target.checked)}
+                        />
+                        <span>Keep previous owner (<strong>{editingDeal.owner?.full_name}</strong>) as a collaborator</span>
+                      </label>
+                      <p className="text-xs text-muted" style={{ margin: '4px 0 0 24px' }}>
+                        {keepPreviousOwner
+                          ? `${editingDeal.owner?.full_name} will remain on this deal as an active collaborator.`
+                          : `${editingDeal.owner?.full_name} will be removed from this deal entirely.`}
+                      </p>
+                    </div>
+                  )}
+                </div>
                 
               </div>
               <div className="modal-footer">
