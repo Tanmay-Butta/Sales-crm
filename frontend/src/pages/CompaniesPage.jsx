@@ -24,6 +24,7 @@ export default function CompaniesPage() {
     owner_id: ''
   });
   const [submitting, setSubmitting] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -48,6 +49,7 @@ export default function CompaniesPage() {
   const openCreateModal = () => {
     setEditingCompany(null);
     setFormData({ name: '', industry: '', website: '', owner_id: '' });
+    setDuplicateWarning(null);
     setIsModalOpen(true);
   };
 
@@ -59,17 +61,19 @@ export default function CompaniesPage() {
       website: company.website || '',
       owner_id: company.owner_id || ''
     });
+    setDuplicateWarning(null);
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, allowDuplicate = false) => {
+    if (e) e.preventDefault();
     setSubmitting(true);
     
     try {
       const payload = { ...formData };
       if (!payload.website) delete payload.website;
       if (!isManager) delete payload.owner_id;
+      if (allowDuplicate) payload.allow_duplicate = true;
 
       if (editingCompany) {
         await companiesAPI.updateCompany(editingCompany.id, payload);
@@ -78,11 +82,16 @@ export default function CompaniesPage() {
         await companiesAPI.createCompany(payload);
         toast.success("Company created");
       }
+      setDuplicateWarning(null);
       setIsModalOpen(false);
       fetchData();
     } catch (err) {
-      const message = err.response?.data?.error?.message || "Failed to save company";
-      toast.error(message);
+      if (isManager && err.response?.data?.error?.code === 'DUPLICATE_COMPANY_WARNING') {
+        setDuplicateWarning(err.response.data.error.message);
+      } else {
+        const message = err.response?.data?.error?.message || "Failed to save company";
+        toast.error(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -436,6 +445,44 @@ export default function CompaniesPage() {
             </div>
             
             <form onSubmit={handleSubmit}>
+              {duplicateWarning && (
+                <div style={{
+                  background: 'rgba(234, 179, 8, 0.12)',
+                  border: '1px solid rgba(234, 179, 8, 0.35)',
+                  borderRadius: '6px',
+                  padding: '12px 14px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ color: '#facc15', fontWeight: 600, fontSize: '0.85rem', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertCircle size={16} /> Duplicate Company Account
+                  </div>
+                  <p className="text-xs" style={{ color: 'var(--color-text-secondary)', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                    {duplicateWarning}
+                  </p>
+                  <p className="text-xs text-muted" style={{ margin: '0 0 12px 0' }}>
+                    As a Sales Manager, do you still want to create a separate company record with this name?
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost btn-sm" 
+                      onClick={() => setDuplicateWarning(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-primary btn-sm" 
+                      style={{ background: '#eab308', borderColor: '#eab308', color: '#000', fontWeight: 600 }}
+                      onClick={(e) => handleSubmit(e, true)}
+                      disabled={submitting}
+                    >
+                      {submitting ? 'Creating...' : 'Create Duplicate Anyway'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="form-group">
                 <label className="form-label">Company Name *</label>
                 <input 
@@ -443,7 +490,10 @@ export default function CompaniesPage() {
                   className="form-input" 
                   required 
                   value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, name: e.target.value});
+                    if (duplicateWarning) setDuplicateWarning(null);
+                  }}
                 />
               </div>
               

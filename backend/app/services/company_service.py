@@ -44,7 +44,39 @@ def _validate_owner(owner_id):
         raise ValidationError("Company owner must be a Sales Rep, never a Manager", code=ErrorCodes.VALIDATION_ERROR)
     return owner
 
+def _check_duplicate_name(name, current_user, exclude_company_id=None, allow_duplicate=False):
+    """Prevent duplicate company creation across reps. Managers can optionally override."""
+    clean_name = name.strip()
+    query = Company.query.filter(db.func.lower(Company.name) == db.func.lower(clean_name))
+    if exclude_company_id:
+        query = query.filter(Company.id != exclude_company_id)
+    
+    existing = query.first()
+    if existing:
+        owner_name = existing.owner.full_name if existing.owner else f"Rep #{existing.owner_id}"
+        archived_str = " (archived)" if existing.archived_at else ""
+        
+        if current_user.role == Roles.SALES_MANAGER:
+            if not allow_duplicate:
+                raise ValidationError(
+                    f"A company named '{existing.name}' already exists{archived_str} (assigned to {owner_name}).",
+                    code="DUPLICATE_COMPANY_WARNING"
+                )
+        else:
+            raise ValidationError(
+                f"A company named '{existing.name}' already exists{archived_str} (owned by {owner_name}). "
+                f"Please coordinate with {owner_name} or a Sales Manager to collaborate.",
+                code=ErrorCodes.VALIDATION_ERROR
+            )
+
 def create_company(current_user, data):
+    name = data.get('name', '').strip()
+    if not name:
+        raise ValidationError("Company name is required")
+        
+    allow_duplicate = data.get('allow_duplicate', False) and current_user.role == Roles.SALES_MANAGER
+    _check_duplicate_name(name, current_user, allow_duplicate=allow_duplicate)
+
     if current_user.role == Roles.SALES_REP:
         data['owner_id'] = current_user.id
     else:
@@ -54,7 +86,7 @@ def create_company(current_user, data):
     _validate_owner(data['owner_id'])
 
     company = Company(
-        name=data['name'].strip(),
+        name=name,
         industry=data['industry'].strip(),
         website=data.get('website', '').strip() if data.get('website') else None,
         owner_id=data['owner_id']
@@ -77,7 +109,14 @@ def update_company(current_user, company_id, data):
             company.owner_id = data['owner_id']
 
     if 'name' in data:
-        company.name = data['name'].strip()
+        new_name = data['name'].strip()
+        if not new_name:
+            raise ValidationError("Company name cannot be empty")
+        if new_name.lower() != company.name.lower():
+            allow_duplicate = data.get('allow_duplicate', False) and current_user.role == Roles.SALES_MANAGER
+            _check_duplicate_name(new_name, current_user, exclude_company_id=company.id, allow_duplicate=allow_duplicate)
+        company.name = new_name
+
     if 'industry' in data:
         company.industry = data['industry'].strip()
     if 'website' in data:

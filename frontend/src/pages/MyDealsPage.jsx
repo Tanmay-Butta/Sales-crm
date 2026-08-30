@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Navigate } from "react-router-dom";
 import { 
   ListTodo, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, X, UserPlus, Trash
 } from "lucide-react";
@@ -10,6 +11,11 @@ import { authAPI } from "../api/auth";
 
 export default function MyDealsPage() {
   const { user, isManager } = useAuth();
+  
+  // If user is a Sales Manager, redirect to global Deals page since managers oversee the full pipeline
+  if (isManager) {
+    return <Navigate to="/deals" replace />;
+  }
   
   const [deals, setDeals] = useState([]);
   const [companies, setCompanies] = useState([]);

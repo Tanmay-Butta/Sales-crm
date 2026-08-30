@@ -37,6 +37,11 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Rendering deals and companies without provenance context.
 - **Why:** In an asymmetric visibility model, sales reps see deals and companies from multiple distinct access pathways (e.g., Rep Alice sees Rep Charlie's deal in "All Deals" because Alice owns the parent company *Acme Corp*, even though Alice is not on the deal itself). Without explicit provenance indicators, reps can become confused about why another rep's deal is visible to them or mistakenly assume a permission leak. Explicit access badges clarify the exact authorization path, highlight editability boundaries (read-only for company-owned deals vs editable for owned/collaborated deals), and maintain a professional enterprise CRM aesthetic.
 
+## Decision 7: Case-Insensitive Duplicate Company Prevention with Manager Override
+- **Chose:** Enforcing server-side uniqueness on company names (case-insensitive and whitespace-trimmed) on both company creation and company renaming, with strict blocking for Sales Reps and an explicit confirmation override for Sales Managers (`allow_duplicate: true`).
+- **Rejected:** Permitting silent duplicate company names across different reps or hard-blocking managers without an override option.
+- **Why:** The README specifically highlights the operational failure mode where *"two reps end up working the same company because neither knew the other had already reached out."* If Rep A owns *Google* and Rep B separately creates another *Google* account, the organization suffers from split communication, competing pitches, and commission conflicts. When a duplicate name is detected for a rep, the server rejects the request with an informative error message stating who already owns the account (e.g., *"A company named 'Google' already exists (owned by Alice Rep). Please coordinate with Alice Rep or a Sales Manager to collaborate."*). For Sales Managers, who may intentionally need to manage distinct legal entities with identical names, the system displays an explicit in-modal warning dialog requiring manager confirmation before creating the duplicate.
+
 ---
 
 ### Assumptions & Business Rules

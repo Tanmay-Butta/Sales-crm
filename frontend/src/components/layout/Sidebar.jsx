@@ -57,16 +57,18 @@ export default function Sidebar({ alertCount = 0 }) {
           className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
         >
           <Handshake size={18} />
-          All Deals
+          {isManager ? 'Deals Pipeline' : 'All Deals'}
         </NavLink>
 
-        <NavLink
-          to="/my-deals"
-          className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-        >
-          <ListTodo size={18} />
-          My Deals
-        </NavLink>
+        {!isManager && (
+          <NavLink
+            to="/my-deals"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+          >
+            <ListTodo size={18} />
+            My Deals
+          </NavLink>
+        )}
 
         <div className="sidebar-section-label">Notifications</div>
 
