@@ -158,6 +158,35 @@ def update_deal(current_user, deal_id, data):
                 created_at=datetime.now(timezone.utc)
             )
             db.session.add(history_entry)
+
+            # Optional keep previous owner as collaborator
+            keep_as_collab = data.get('keep_previous_owner_as_collaborator', False)
+            if keep_as_collab and old_owner and old_owner.role == Roles.SALES_REP:
+                collab_check = DealCollaborator.query.filter_by(deal_id=deal.id, user_id=old_owner.id).first()
+                if not collab_check:
+                    new_collab = DealCollaborator(
+                        deal_id=deal.id,
+                        user_id=old_owner.id,
+                        added_by=current_user.id,
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    db.session.add(new_collab)
+
+                    collab_history = DealHistory(
+                        deal_id=deal.id,
+                        event_type=EventTypes.COLLABORATOR_ADDED,
+                        old_value=None,
+                        new_value={
+                            'user_id': old_owner.id,
+                            'user_name': old_owner.full_name,
+                            'email': old_owner.email,
+                            'note': 'Retained as collaborator upon owner reassignment'
+                        },
+                        actor_id=current_user.id,
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    db.session.add(collab_history)
+
             deal.owner_id = new_owner.id
 
     db.session.commit()

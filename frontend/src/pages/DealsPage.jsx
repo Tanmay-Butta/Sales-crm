@@ -20,6 +20,7 @@ export default function DealsPage() {
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
+  const [keepPreviousOwner, setKeepPreviousOwner] = useState(true);
   const [formData, setFormData] = useState({
     title: "",
     value: "",
@@ -69,6 +70,7 @@ export default function DealsPage() {
       return;
     }
     setEditingDeal(null);
+    setKeepPreviousOwner(true);
     setFormData({
       title: "",
       value: "",
@@ -81,6 +83,7 @@ export default function DealsPage() {
 
   const openEditModal = (deal) => {
     setEditingDeal(deal);
+    setKeepPreviousOwner(true);
     setFormData({
       title: deal.title,
       value: deal.value,
@@ -120,7 +123,10 @@ export default function DealsPage() {
           expected_close_date: payload.expected_close_date
         };
         if (isManager && payload.owner_id) {
-           updatePayload.owner_id = payload.owner_id;
+          updatePayload.owner_id = payload.owner_id;
+          if (payload.owner_id !== editingDeal.owner_id) {
+            updatePayload.keep_previous_owner_as_collaborator = keepPreviousOwner;
+          }
         }
         await dealsAPI.updateDeal(editingDeal.id, updatePayload);
         toast.success("Deal updated successfully");
@@ -534,6 +540,30 @@ export default function DealsPage() {
                       ))}
                     </select>
                     <p className="form-hint">Managers cannot own deals. You must assign a Sales Rep.</p>
+
+                    {editingDeal && formData.owner_id && parseInt(formData.owner_id, 10) !== editingDeal.owner_id && (
+                      <div style={{
+                        background: 'rgba(99, 102, 241, 0.1)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        borderRadius: '6px',
+                        padding: '10px 12px',
+                        marginTop: '10px'
+                      }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text)' }}>
+                          <input
+                            type="checkbox"
+                            checked={keepPreviousOwner}
+                            onChange={(e) => setKeepPreviousOwner(e.target.checked)}
+                          />
+                          <span>Keep previous owner (<strong>{editingDeal.owner?.full_name}</strong>) as a collaborator</span>
+                        </label>
+                        <p className="text-xs text-muted" style={{ margin: '4px 0 0 24px' }}>
+                          {keepPreviousOwner
+                            ? `${editingDeal.owner?.full_name} will remain on this deal as an active collaborator.`
+                            : `${editingDeal.owner?.full_name} will be removed from this deal entirely.`}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
                 
