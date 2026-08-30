@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
-  Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash
+  Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash,
+  ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -29,6 +30,12 @@ export default function DealsPage() {
     owner_id: ""
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Backward Reason Modal state
+  const [backwardModalDeal, setBackwardModalDeal] = useState(null);
+  const [backwardTargetStage, setBackwardTargetStage] = useState("");
+  const [backwardReason, setBackwardReason] = useState("");
+  const [backwardSubmitting, setBackwardSubmitting] = useState(false);
 
   // Collaborators Modal state
   const [collabModalDeal, setCollabModalDeal] = useState(null);
@@ -218,6 +225,99 @@ export default function DealsPage() {
     }
   };
 
+  // Stage Advance Handler
+  const handleAdvanceStage = async (deal, nextStage) => {
+    try {
+      await dealsAPI.changeStage(deal.id, nextStage);
+      toast.success(`Deal advanced to ${nextStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to advance stage");
+    }
+  };
+
+  // Open Backward Reason Modal
+  const openBackwardModal = (deal, targetStage) => {
+    setBackwardModalDeal(deal);
+    setBackwardTargetStage(targetStage);
+    setBackwardReason("");
+  };
+
+  // Submit Backward Move
+  const handleBackwardSubmit = async (e) => {
+    e.preventDefault();
+    if (!backwardReason.trim()) {
+      toast.error("Please provide a reason for moving the deal backward.");
+      return;
+    }
+
+    setBackwardSubmitting(true);
+    try {
+      await dealsAPI.changeStage(backwardModalDeal.id, backwardTargetStage, backwardReason.trim());
+      toast.success(`Deal moved back to ${backwardTargetStage}`);
+      setBackwardModalDeal(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to move deal backward");
+    } finally {
+      setBackwardSubmitting(false);
+    }
+  };
+
+  // Close Deal Handler (Won / Lost from Negotiation)
+  const handleCloseDeal = async (deal, closeStage) => {
+    if (!window.confirm(`Mark deal "${deal.title}" as ${closeStage}? This will close the deal.`)) return;
+    try {
+      await dealsAPI.changeStage(deal.id, closeStage);
+      toast.success(`Deal marked as ${closeStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to close deal");
+    }
+  };
+
+  // Reopen Deal Handler (Sales Manager only)
+  const handleReopenDeal = async (deal) => {
+    const prev = deal.previous_stage || 'Negotiation';
+    if (!window.confirm(`Reopen "${deal.title}"? It will restore to its pre-close stage (${prev}).`)) return;
+    try {
+      await dealsAPI.reopenDeal(deal.id);
+      toast.success(`Deal reopened to ${prev}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to reopen deal");
+    }
+  };
+
+  // Dropdown Stage Selection Change Handler
+  const handleStageSelectChange = async (deal, targetStage) => {
+    if (!targetStage || targetStage === deal.stage) return;
+
+    if (targetStage === 'REOPEN') {
+      handleReopenDeal(deal);
+      return;
+    }
+
+    // Check if target is a backward open stage - open modal to collect reason
+    const stageOrder = ['NEW', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION'];
+    const currentIdx = stageOrder.indexOf(deal.stage);
+    const targetIdx = stageOrder.indexOf(targetStage);
+
+    if (currentIdx !== -1 && targetIdx !== -1 && targetIdx < currentIdx) {
+      openBackwardModal(deal, targetStage);
+      return;
+    }
+
+    // Direct transition attempt (backend strictly validates forward 1-step, closing rules, and closed deals)
+    try {
+      await dealsAPI.changeStage(deal.id, targetStage);
+      toast.success(`Deal moved to ${targetStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to update deal stage");
+    }
+  };
+
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -236,6 +336,18 @@ export default function DealsPage() {
       LOST: 'badge-red'
     };
     return `badge ${colors[stage] || 'badge-gray'}`;
+  };
+
+  const getProbabilityLabel = (stage) => {
+    const probs = {
+      NEW: '10%',
+      QUALIFIED: '25%',
+      PROPOSAL: '50%',
+      NEGOTIATION: '75%',
+      WON: '100%',
+      LOST: '0%'
+    };
+    return probs[stage] || '0%';
   };
 
   // Helper to determine why the current user sees this deal
@@ -376,12 +488,54 @@ export default function DealsPage() {
                         {deal.company?.name || "Unknown"}
                       </div>
                     </td>
-                    <td className="font-medium">{formatCurrency(deal.value)}</td>
+                    <td className="font-medium">
+                      <div className="font-medium text-white">{formatCurrency(deal.value)}</div>
+                      {!deal.is_closed && (
+                        <div className="text-xs text-muted" style={{ marginTop: '2px' }} title={`Weighted at ${getProbabilityLabel(deal.stage)} probability`}>
+                          Wt: {formatCurrency(deal.weighted_value || (deal.value * (deal.win_probability || 0)))}
+                        </div>
+                      )}
+                    </td>
                     <td>{new Date(deal.expected_close_date).toLocaleDateString()}</td>
                     <td>
-                      <span className={getStageBadge(deal.stage)}>
-                        {deal.stage}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '180px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={getStageBadge(deal.stage)}>
+                            {deal.stage} ({getProbabilityLabel(deal.stage)})
+                          </span>
+                          {deal.is_closed && (
+                            <span className="badge badge-gray text-xs" title={deal.closed_at ? `Closed on ${new Date(deal.closed_at).toLocaleDateString()}` : 'Closed'}>
+                              <Lock size={10} style={{ marginRight: '3px' }} /> Closed
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Interactive Stage Dropdown */}
+                        <select
+                          className="form-select"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.8rem',
+                            borderRadius: '6px',
+                            background: 'var(--color-bg)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text)',
+                            cursor: 'pointer',
+                            width: '100%'
+                          }}
+                          value={deal.stage}
+                          onChange={(e) => handleStageSelectChange(deal, e.target.value)}
+                          title="Select target stage to advance, step back, close, or test transition rules"
+                        >
+                          <option value="NEW">NEW (10%)</option>
+                          <option value="QUALIFIED">QUALIFIED (25%)</option>
+                          <option value="PROPOSAL">PROPOSAL (50%)</option>
+                          <option value="NEGOTIATION">NEGOTIATION (75%)</option>
+                          <option value="WON">🏆 WON (100%)</option>
+                          <option value="LOST">❌ LOST (0%)</option>
+                          <option value="REOPEN">🔄 Reopen Deal</option>
+                        </select>
+                      </div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -401,31 +555,23 @@ export default function DealsPage() {
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-2">
-                        {/* Edit Deal (Manager, Owner, or Collaborator) */}
-                        {canEdit ? (
-                          <button 
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => openEditModal(deal)}
-                            title="Edit Deal Details"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        ) : (
-                          <span className="text-muted text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="Read-only: You can view this deal because you own the parent company, but only the deal owner/collaborator can edit deal details.">
-                            <AlertCircle size={14} /> Read-only
-                          </span>
-                        )}
+                        {/* Edit Deal (Enabled for all so viewers/collaborators can test authorization) */}
+                        <button 
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => openEditModal(deal)}
+                          title="Edit Deal Details"
+                        >
+                          <Edit2 size={16} />
+                        </button>
 
-                        {/* Manage Collaborators (Manager or Owner only) */}
-                        {canManageCollabs && (
-                          <button 
-                            className="btn btn-ghost btn-sm text-primary"
-                            onClick={() => openCollaboratorsModal(deal)}
-                            title="Manage Collaborators"
-                          >
-                            <Users size={16} />
-                          </button>
-                        )}
+                        {/* Manage Collaborators (Enabled for all so non-owners can test authorization) */}
+                        <button 
+                          className="btn btn-ghost btn-sm text-primary"
+                          onClick={() => openCollaboratorsModal(deal)}
+                          title="Manage Collaborators"
+                        >
+                          <Users size={16} />
+                        </button>
 
                         {/* View Audit Trail Timeline */}
                         <button 
@@ -436,16 +582,14 @@ export default function DealsPage() {
                           <History size={16} />
                         </button>
 
-                        {/* Delete Deal (Manager or Owner only) */}
-                        {canDelete && (
-                          <button 
-                            className="btn btn-ghost btn-sm text-red"
-                            onClick={() => handleDelete(deal.id)}
-                            title="Delete Deal"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
+                        {/* Delete Deal (Enabled for all so non-owners can test authorization) */}
+                        <button 
+                          className="btn btn-ghost btn-sm text-red"
+                          onClick={() => handleDelete(deal.id)}
+                          title="Delete Deal"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -524,48 +668,45 @@ export default function DealsPage() {
                   </div>
                 )}
                 
-                {isManager && (
-                  <div className="form-group">
-                    <label className="form-label">Assign Sales Rep Owner *</label>
-                    <select
-                      name="owner_id"
-                      className="form-select"
-                      value={formData.owner_id}
-                      onChange={handleInputChange}
-                      required
-                    >
-                      <option value="">Select a rep...</option>
-                      {reps.map(r => (
-                        <option key={r.id} value={r.id}>{r.full_name}</option>
-                      ))}
-                    </select>
-                    <p className="form-hint">Managers cannot own deals. You must assign a Sales Rep.</p>
+                <div className="form-group">
+                  <label className="form-label">Assign Sales Rep Owner *</label>
+                  <select
+                    name="owner_id"
+                    className="form-select"
+                    value={formData.owner_id}
+                    onChange={handleInputChange}
+                  >
+                    <option value="">Select a rep...</option>
+                    {reps.map(r => (
+                      <option key={r.id} value={r.id}>{r.full_name}</option>
+                    ))}
+                  </select>
+                  <p className="form-hint">Managers can assign/reassign owners. Non-managers will be rejected by backend with 403.</p>
 
-                    {editingDeal && formData.owner_id && parseInt(formData.owner_id, 10) !== editingDeal.owner_id && (
-                      <div style={{
-                        background: 'rgba(99, 102, 241, 0.1)',
-                        border: '1px solid rgba(99, 102, 241, 0.25)',
-                        borderRadius: '6px',
-                        padding: '10px 12px',
-                        marginTop: '10px'
-                      }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text)' }}>
-                          <input
-                            type="checkbox"
-                            checked={keepPreviousOwner}
-                            onChange={(e) => setKeepPreviousOwner(e.target.checked)}
-                          />
-                          <span>Keep previous owner (<strong>{editingDeal.owner?.full_name}</strong>) as a collaborator</span>
-                        </label>
-                        <p className="text-xs text-muted" style={{ margin: '4px 0 0 24px' }}>
-                          {keepPreviousOwner
-                            ? `${editingDeal.owner?.full_name} will remain on this deal as an active collaborator.`
-                            : `${editingDeal.owner?.full_name} will be removed from this deal entirely.`}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                  {editingDeal && formData.owner_id && parseInt(formData.owner_id, 10) !== editingDeal.owner_id && (
+                    <div style={{
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      borderRadius: '6px',
+                      padding: '10px 12px',
+                      marginTop: '10px'
+                    }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text)' }}>
+                        <input
+                          type="checkbox"
+                          checked={keepPreviousOwner}
+                          onChange={(e) => setKeepPreviousOwner(e.target.checked)}
+                        />
+                        <span>Keep previous owner (<strong>{editingDeal.owner?.full_name}</strong>) as a collaborator</span>
+                      </label>
+                      <p className="text-xs text-muted" style={{ margin: '4px 0 0 24px' }}>
+                        {keepPreviousOwner
+                          ? `${editingDeal.owner?.full_name} will remain on this deal as an active collaborator.`
+                          : `${editingDeal.owner?.full_name} will be removed from this deal entirely.`}
+                      </p>
+                    </div>
+                  )}
+                </div>
                 
               </div>
               <div className="modal-footer">
@@ -744,6 +885,61 @@ export default function DealsPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backward Reason Modal */}
+      {backwardModalDeal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setBackwardModalDeal(null); }}>
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <h3>Move Deal Backward</h3>
+                <p className="text-muted text-xs mt-1">
+                  Moving <strong>{backwardModalDeal.title}</strong> from {backwardModalDeal.stage} back to {backwardTargetStage}
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setBackwardModalDeal(null)}>✕</button>
+            </div>
+            
+            <form onSubmit={handleBackwardSubmit}>
+              <div className="modal-body">
+                <div style={{
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  marginBottom: '16px'
+                }}>
+                  <p className="text-xs" style={{ color: '#facc15', margin: 0, lineHeight: 1.4 }}>
+                    Per CRM policy, moving a deal backward requires a recorded explanation for the deal audit trail.
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Reason for Moving Backward *</label>
+                  <textarea
+                    className="form-input"
+                    rows="3"
+                    required
+                    placeholder="e.g., Client requested revised proposal and additional pricing tiers..."
+                    value={backwardReason}
+                    onChange={(e) => setBackwardReason(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setBackwardModalDeal(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={backwardSubmitting || !backwardReason.trim()}>
+                  {backwardSubmitting ? "Moving..." : "Confirm Move Backward"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

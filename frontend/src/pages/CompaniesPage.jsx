@@ -330,28 +330,20 @@ export default function CompaniesPage() {
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          {canEdit ? (
-                            <>
-                              <button 
-                                className="btn btn-ghost btn-sm"
-                                onClick={(e) => { e.stopPropagation(); openEditModal(company); }}
-                                title="Edit company details"
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                              <button 
-                                className={`btn btn-ghost btn-sm ${company.archived_at ? 'text-success' : 'text-danger'}`}
-                                onClick={(e) => { e.stopPropagation(); toggleArchive(company); }}
-                                title={company.archived_at ? "Restore company" : "Archive company"}
-                              >
-                                {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-muted text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="You can view this company because you have deals inside it, but only the company owner can edit company details.">
-                              <AlertCircle size={14} /> Read-only
-                            </span>
-                          )}
+                          <button 
+                            className="btn btn-ghost btn-sm"
+                            onClick={(e) => { e.stopPropagation(); openEditModal(company); }}
+                            title="Edit company details"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            className={`btn btn-ghost btn-sm ${company.archived_at ? 'text-success' : 'text-danger'}`}
+                            onClick={(e) => { e.stopPropagation(); toggleArchive(company); }}
+                            title={company.archived_at ? "Restore company" : "Archive company"}
+                          >
+                            {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -519,25 +511,22 @@ export default function CompaniesPage() {
                 />
               </div>
 
-              {isManager && (
-                <div className="form-group">
-                  <label className="form-label">Assign Sales Rep Owner *</label>
-                  <select 
-                    className="form-select"
-                    required
-                    value={formData.owner_id}
-                    onChange={(e) => setFormData({...formData, owner_id: e.target.value})}
-                  >
-                    <option value="" disabled>--- Select a Sales Rep ---</option>
-                    {reps.map(rep => (
-                      <option key={rep.id} value={rep.id}>{rep.full_name}</option>
-                    ))}
-                  </select>
-                  <div className="form-error mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                    Managers cannot own companies. You must assign a Sales Rep.
-                  </div>
+              <div className="form-group">
+                <label className="form-label">Assign Sales Rep Owner *</label>
+                <select 
+                  className="form-select"
+                  value={formData.owner_id}
+                  onChange={(e) => setFormData({...formData, owner_id: e.target.value})}
+                >
+                  <option value="" disabled>--- Select a Sales Rep ---</option>
+                  {reps.map(rep => (
+                    <option key={rep.id} value={rep.id}>{rep.full_name}</option>
+                  ))}
+                </select>
+                <div className="form-error mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                  Managers can assign/reassign company owners. Rep attempts will be rejected by backend with 403.
                 </div>
-              )}
+              </div>
 
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setIsModalOpen(false)}>

@@ -1,6 +1,6 @@
 """
 Constants for the Sales CRM application.
-Single source of truth for stages, probabilities, error codes, and roles.
+Single source of truth for stages, probabilities, error codes, roles, and state machine transitions.
 """
 
 
@@ -38,6 +38,41 @@ WIN_PROBABILITIES = {
     Stages.NEGOTIATION: 0.75,
     Stages.WON: 1.00,
     Stages.LOST: 0.00,
+}
+
+
+# --- State Machine Transitions (Single declarative lookup table) ---
+STAGE_TRANSITIONS = {
+    Stages.NEW: {
+        'forward': [Stages.QUALIFIED],
+        'backward': [],
+        'close': []
+    },
+    Stages.QUALIFIED: {
+        'forward': [Stages.PROPOSAL],
+        'backward': [Stages.NEW],
+        'close': []
+    },
+    Stages.PROPOSAL: {
+        'forward': [Stages.NEGOTIATION],
+        'backward': [Stages.QUALIFIED],
+        'close': []
+    },
+    Stages.NEGOTIATION: {
+        'forward': [],
+        'backward': [Stages.PROPOSAL],
+        'close': [Stages.WON, Stages.LOST]
+    },
+    Stages.WON: {
+        'forward': [],
+        'backward': [],
+        'close': []
+    },
+    Stages.LOST: {
+        'forward': [],
+        'backward': [],
+        'close': []
+    }
 }
 
 
@@ -82,11 +117,15 @@ class ErrorCodes:
     COMPANY_ARCHIVED = 'COMPANY_ARCHIVED'
     SELF_COLLABORATION = 'SELF_COLLABORATION'
     INVALID_COLLABORATOR = 'INVALID_COLLABORATOR'
+    DUPLICATE_COMPANY_NAME = 'DUPLICATE_COMPANY_NAME'
+    DUPLICATE_COMPANY_WARNING = 'DUPLICATE_COMPANY_WARNING'
+    INVARIANT_VIOLATION = 'INVARIANT_VIOLATION'
 
     # Not found
     DEAL_NOT_FOUND = 'DEAL_NOT_FOUND'
     COMPANY_NOT_FOUND = 'COMPANY_NOT_FOUND'
     USER_NOT_FOUND = 'USER_NOT_FOUND'
+    NOT_FOUND = 'NOT_FOUND'
 
     # Bulk
     BULK_PARTIAL_FAILURE = 'BULK_PARTIAL_FAILURE'

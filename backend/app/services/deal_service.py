@@ -14,8 +14,8 @@ from app.models.deal_collaborator import DealCollaborator
 from app.models.deal_history import DealHistory
 from app.models.company import Company
 from app.models.user import User
-from app.utils.constants import Roles, ErrorCodes, EventTypes
-from app.utils.exceptions import AuthorizationError, ValidationError, NotFoundError
+from app.utils.constants import Roles, ErrorCodes, EventTypes, Stages, STAGE_TRANSITIONS
+from app.utils.exceptions import AuthorizationError, ValidationError, NotFoundError, InternalError
 from app.services import visibility_service
 
 
@@ -126,6 +126,12 @@ def update_deal(current_user, deal_id, data):
 
     if not can_edit_deal(current_user, deal):
         raise AuthorizationError("You do not have permission to edit this deal")
+
+    if 'stage' in data:
+        raise ValidationError(
+            "Direct stage edits are not permitted. Use the dedicated lifecycle transition endpoints (/api/deals/<id>/stage or /reopen).",
+            code=ErrorCodes.VALIDATION_ERROR
+        )
 
     if 'title' in data and data['title'] is not None:
         deal.title = data['title'].strip()
@@ -300,3 +306,167 @@ def get_deal_collaborators(current_user, deal_id):
     """Get all collaborators for a deal."""
     deal = get_deal(current_user, deal_id)
     return DealCollaborator.query.filter_by(deal_id=deal.id).all()
+
+
+# --- Deal Lifecycle State Machine ---
+
+def validate_stage_transition(deal, target_stage, reason=None):
+    """Validate a stage transition against the state machine lookup table.
+
+    Returns:
+        tuple: (move_type, clean_reason) where move_type is 'FORWARD', 'BACKWARD', or 'CLOSE'.
+
+    Raises:
+        ValidationError: If the requested move is illegal or missing required reason.
+    """
+    if deal.is_closed:
+        raise ValidationError(
+            f"Deal is closed ({deal.stage}) and cannot change stages without being reopened by a Sales Manager first.",
+            code=ErrorCodes.DEAL_CLOSED
+        )
+
+    if target_stage == deal.stage:
+        raise ValidationError(
+            f"Deal is already in the '{deal.stage}' stage.",
+            code=ErrorCodes.VALIDATION_ERROR
+        )
+
+    transitions = STAGE_TRANSITIONS.get(deal.stage, {'forward': [], 'backward': [], 'close': []})
+
+    if target_stage in transitions['forward']:
+        return ('FORWARD', None)
+
+    if target_stage in transitions['backward']:
+        if not reason or not reason.strip():
+            raise ValidationError(
+                "A reason is required when moving a deal backward to an earlier stage.",
+                code=ErrorCodes.BACKWARD_REASON_REQUIRED
+            )
+        return ('BACKWARD', reason.strip())
+
+    if target_stage in transitions['close']:
+        return ('CLOSE', None)
+
+    # Rejection handling for explicit illegal moves:
+    if target_stage in Stages.CLOSED:
+        raise ValidationError(
+            f"Deals can only be marked Won or Lost from the Negotiation stage (currently in '{deal.stage}').",
+            code=ErrorCodes.INVALID_STAGE_TRANSITION
+        )
+
+    if target_stage in Stages.OPEN_ORDERED and deal.stage in Stages.OPEN_ORDERED:
+        curr_idx = Stages.OPEN_ORDERED.index(deal.stage)
+        target_idx = Stages.OPEN_ORDERED.index(target_stage)
+
+        if target_idx > curr_idx:
+            next_stage = transitions['forward'][0] if transitions['forward'] else 'Negotiation'
+            raise ValidationError(
+                f"Cannot skip stages. Deals must progress sequentially one stage at a time ({deal.stage} -> {next_stage}).",
+                code=ErrorCodes.INVALID_STAGE_TRANSITION
+            )
+        elif target_idx < curr_idx - 1:
+            prev_stage = transitions['backward'][0] if transitions['backward'] else 'New'
+            raise ValidationError(
+                f"Cannot move backward more than one stage at a time ({deal.stage} -> {prev_stage}).",
+                code=ErrorCodes.INVALID_STAGE_TRANSITION
+            )
+
+    raise ValidationError(
+        f"Invalid stage transition from '{deal.stage}' to '{target_stage}'.",
+        code=ErrorCodes.INVALID_STAGE_TRANSITION
+    )
+
+
+def change_deal_stage(current_user, deal_id, target_stage, reason=None):
+    """Transition a deal to a new stage enforcing lifecycle state machine rules."""
+    deal = get_deal(current_user, deal_id)
+
+    if not can_edit_deal(current_user, deal):
+        raise AuthorizationError("You do not have permission to change the stage of this deal")
+
+    move_type, clean_reason = validate_stage_transition(deal, target_stage, reason)
+    old_stage = deal.stage
+
+    if move_type == 'FORWARD':
+        deal.stage = target_stage
+        history_entry = DealHistory(
+            deal_id=deal.id,
+            event_type=EventTypes.STAGE_CHANGED,
+            old_value={'stage': old_stage},
+            new_value={'stage': target_stage},
+            actor_id=current_user.id,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.session.add(history_entry)
+
+    elif move_type == 'BACKWARD':
+        deal.stage = target_stage
+        history_entry = DealHistory(
+            deal_id=deal.id,
+            event_type=EventTypes.STAGE_BACKWARD,
+            old_value={'stage': old_stage},
+            new_value={'stage': target_stage},
+            reason=clean_reason,
+            actor_id=current_user.id,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.session.add(history_entry)
+
+    elif move_type == 'CLOSE':
+        deal.previous_stage = old_stage  # Store immediate open stage before closing
+        deal.stage = target_stage
+        deal.closed_at = datetime.now(timezone.utc)
+        history_entry = DealHistory(
+            deal_id=deal.id,
+            event_type=EventTypes.STAGE_CHANGED,
+            old_value={'stage': old_stage},
+            new_value={'stage': target_stage},
+            actor_id=current_user.id,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.session.add(history_entry)
+
+    db.session.commit()
+    return deal
+
+
+def reopen_deal(current_user, deal_id):
+    """Reopen a closed deal (Won or Lost). Sales Manager only."""
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only Sales Managers can reopen a closed deal", code=ErrorCodes.MANAGER_REQUIRED)
+
+    deal = get_deal(current_user, deal_id)
+
+    if not deal.is_closed:
+        raise ValidationError("Deal is already open and cannot be reopened", code=ErrorCodes.VALIDATION_ERROR)
+
+    # Invariant enforcement: loud failure if state corruption detected
+    if not deal.previous_stage:
+        raise InternalError(
+            f"Corrupted state: closed deal #{deal.id} lacks previous_stage record",
+            code=ErrorCodes.INVARIANT_VIOLATION
+        )
+    if deal.previous_stage not in Stages.OPEN_ORDERED:
+        raise InternalError(
+            f"Corrupted state: previous_stage '{deal.previous_stage}' is not a valid open stage",
+            code=ErrorCodes.INVARIANT_VIOLATION
+        )
+
+    old_stage = deal.stage
+    target_stage = deal.previous_stage
+
+    deal.stage = target_stage
+    deal.previous_stage = None
+    deal.closed_at = None
+
+    history_entry = DealHistory(
+        deal_id=deal.id,
+        event_type=EventTypes.DEAL_REOPENED,
+        old_value={'stage': old_stage},
+        new_value={'stage': target_stage},
+        actor_id=current_user.id,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.session.add(history_entry)
+    db.session.commit()
+    return deal
