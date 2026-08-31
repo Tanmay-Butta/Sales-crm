@@ -181,3 +181,40 @@ if not visibility_service.can_view_company(current_user, company):
     raise AuthorizationError("You do not have permission to attach deals to this company.")
 ```
 Now, if anyone tries to send a sneaky request for a hidden company, the server rejects it with a `403 Forbidden` error.
+
+---
+
+## 6. Server-Side Finding Deals & Dynamic Sorting SQL Injection Prevention (Goal 6)
+
+### The Pre-Story Plan & Context
+When planning Goal 6 (Finding Deals with text search, multiple filters, dynamic sorting, and pagination), I wanted to make sure everything happened strictly on the database side rather than loading all deals into the browser. 
+
+While reviewing how sorting and filtering would work dynamically, I realized a classic security risk in CRM applications: dynamic SQL sorting. When a user can pick columns to sort by (`value`, `expected_close_date`, `updated_at`) and pass `sort_by` and `sort_dir` as query parameters, naive backend code often interpolates or executes those strings directly in the query, creating a major SQL injection / attribute reflection vulnerability.
+
+### Prompt
+```text
+I want to implement Goal 6 (server-side search, filtering by company/stage/owner, dynamic sorting by value/close date/last update, and pagination).
+Make sure to check if there is any SQL injection vulnerability in the search and sort query logic, and ensure all query parameters are properly sanitized and allowlisted.
+```
+
+### What AI Generated
+In an initial draft of dynamic sorting and search, the AI attempted to dynamically pass string column names directly into the ORM order clause or use raw SQL fragments:
+```python
+# Risky dynamic ordering pattern:
+sort_field = request.args.get('sort_by', 'updated_at')
+sort_order = request.args.get('sort_dir', 'desc')
+query = query.order_by(text(f"{sort_field} {sort_order}"))
+```
+
+### What was Wrong & What I Corrected
+**Security Vulnerability:** Passing arbitrary user-controlled strings directly into `order_by(text(...))` allows an attacker to inject SQL clauses, subqueries, or trigger database errors through the sort parameter (e.g. `?sort_by=CASE WHEN (SELECT ...)=1 THEN value ELSE title END`).
+
+**My Correction:**
+I pointed out the vulnerability and insisted on a strict defense-in-depth model:
+1. **Strict Allowlisting:** Defined `ALLOWED_DEAL_SORT_FIELDS = ['value', 'expected_close_date', 'updated_at']`. Any request with an unlisted field (e.g. `?sort_by=password_hash` or SQL fragments) is immediately rejected with an HTTP 422 `ValidationError`.
+2. **Model Attribute Lookup instead of Raw Text:** Instead of raw text injection, we fetch the verified column attribute using `getattr(Deal, clean_sort_by)` and call `.asc()` or `.desc()`.
+3. **Parameterized Search:** Text search across Deal Title and Company Name uses standard ANSI `db.func.lower(Deal.title).like(term)` where `term` is passed as a bound parameter (`:title_1`), preventing SQL injection even with special characters or SQL syntax in search queries.
+4. **Deterministic Tie-Breaker:** Appended `Deal.id.desc()` to ordering to ensure reliable pagination splits without shifted rows across pages.
+5. **Visibility-First Base:** The entire search/filter query chains directly on top of `visibility_service.get_visible_deals_query(current_user)`, ensuring reps can never discover or search deals outside their authorized scope.
+
+I wrote automated backend test cases in `scratch/test_search_filters_pagination.py` to directly test that invalid sort fields (`?sort_by=password_hash`) are rejected with clear error codes, that case-insensitive searches work safely, and that search never exposes unauthorized deals.
