@@ -1,11 +1,12 @@
 """
-Deals routes - endpoints for Deals CRUD, My Deals, Collaborators, History, and Lifecycle state machine.
+Deals routes - endpoints for Deals CRUD, My Deals, Collaborators, History, Notes, and Lifecycle state machine.
 """
 
 from flask import Blueprint, request, jsonify
 from app.middleware.auth import auth_required
-from app.schemas.deal import deal_create_schema, deal_update_schema, deal_stage_change_schema
+from app.schemas.deal import deal_create_schema, deal_update_schema, deal_stage_change_schema, deal_note_schema
 from app.services import deal_service
+from app.models.deal_history import DealHistory
 from app.utils.exceptions import ValidationError
 
 deals_bp = Blueprint('deals', __name__, url_prefix='/api/deals')
@@ -128,7 +129,24 @@ def remove_collaborator(current_user, deal_id, user_id):
 @deals_bp.route('/<int:deal_id>/history', methods=['GET'])
 @auth_required
 def get_deal_history(current_user, deal_id):
-    """Get immutable timeline audit trail for a deal."""
+    """Get immutable timeline audit trail for a deal.
+    Returns history in reverse chronological order (newest first).
+    No UPDATE or DELETE endpoint exists for history — this is intentional (§9).
+    """
     deal = deal_service.get_deal(current_user, deal_id)
-    history = deal.history.order_by(deal.history.property.mapper.class_.created_at.desc()).all()
+    history = DealHistory.query.filter_by(deal_id=deal.id).order_by(DealHistory.created_at.desc()).all()
     return jsonify({'history': [h.to_dict() for h in history]}), 200
+
+
+# --- Notes Endpoint (Append-only, part of immutable timeline §9) ---
+
+@deals_bp.route('/<int:deal_id>/notes', methods=['POST'])
+@auth_required
+def add_note(current_user, deal_id):
+    """Add an immutable note to a deal's timeline. Once created, cannot be edited or deleted."""
+    data = deal_note_schema.load(request.get_json())
+    history_entry = deal_service.add_note(current_user, deal_id, data['note'])
+    return jsonify({
+        'history': history_entry.to_dict(),
+        'message': 'Note added to deal timeline'
+    }), 201

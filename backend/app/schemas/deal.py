@@ -26,7 +26,15 @@ class DealStageChangeSchema(Schema):
     stage = fields.Str(required=True, validate=validate.OneOf(Stages.ALL))
     reason = fields.Str(required=False, allow_none=True)
 
+class DealNoteSchema(Schema):
+    """Schema for adding an immutable note to a deal's timeline.
+    Notes are append-only — once created, they cannot be edited or deleted (§9).
+    """
+    note = fields.Str(required=True, validate=validate.Length(min=1, max=2000))
+
 # Initialize schema instances
 deal_create_schema = DealCreateSchema()
 deal_update_schema = DealUpdateSchema()
 deal_stage_change_schema = DealStageChangeSchema()
+deal_note_schema = DealNoteSchema()
+
