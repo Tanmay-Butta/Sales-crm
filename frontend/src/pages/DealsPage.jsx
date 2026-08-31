@@ -46,6 +46,8 @@ export default function DealsPage() {
   const [historyModalDeal, setHistoryModalDeal] = useState(null);
   const [historyEvents, setHistoryEvents] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteSubmitting, setNoteSubmitting] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -212,16 +214,39 @@ export default function DealsPage() {
   };
 
   // History / Audit Trail
-  const openHistoryModal = async (deal) => {
-    setHistoryModalDeal(deal);
+  const loadHistory = async (dealId) => {
     setHistoryLoading(true);
     try {
-      const res = await dealsAPI.getHistory(deal.id);
-      setHistoryEvents(res.data.history);
+      const res = await dealsAPI.getHistory(dealId);
+      setHistoryEvents(res.data.history || []);
     } catch (err) {
-      toast.error("Failed to load deal audit trail");
+      console.error('History load error:', err);
+      toast.error(err.response?.data?.error?.message || "Failed to load deal audit trail");
+      setHistoryEvents([]);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  const openHistoryModal = (deal) => {
+    setHistoryModalDeal(deal);
+    setNoteText("");
+    loadHistory(deal.id);
+  };
+
+  const handleAddNote = async (e) => {
+    e.preventDefault();
+    if (!noteText.trim()) return;
+    setNoteSubmitting(true);
+    try {
+      await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
+      toast.success("Note added to timeline");
+      setNoteText("");
+      loadHistory(historyModalDeal.id);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to add note");
+    } finally {
+      setNoteSubmitting(false);
     }
   };
 
@@ -878,63 +903,132 @@ export default function DealsPage() {
       {/* History / Audit Trail Timeline Modal */}
       {historyModalDeal && (
         <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalDeal(null); }}>
-          <div className="modal" style={{ maxWidth: '600px' }}>
+          <div className="modal" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
               <div>
-                <h3>Deal Audit Timeline</h3>
-                <p className="text-muted text-xs mt-1">{historyModalDeal.title} (Immutable History)</p>
+                <h3>📋 Deal Timeline</h3>
+                <p className="text-muted text-xs mt-1">{historyModalDeal.title} — Immutable audit trail</p>
               </div>
               <button className="modal-close" onClick={() => setHistoryModalDeal(null)}>✕</button>
             </div>
             
-            <div className="modal-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {/* Add Note Input */}
+            <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+              <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Add a note to this deal..."
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  maxLength={2000}
+                  style={{ flex: 1 }}
+                />
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  disabled={noteSubmitting || !noteText.trim()}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {noteSubmitting ? 'Adding...' : 'Add Note'}
+                </button>
+              </form>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '450px', overflowY: 'auto' }}>
               {historyLoading ? (
-                <div className="text-center p-4 text-muted">Loading history...</div>
+                <div className="text-center p-4 text-muted">Loading timeline...</div>
               ) : historyEvents.length === 0 ? (
-                <div className="text-muted text-center p-4">No history records found.</div>
+                <div className="text-muted text-center p-4">No timeline events yet. Add a note to get started.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {historyEvents.map(h => (
-                    <div 
-                      key={h.id} 
-                      style={{ 
-                        borderLeft: '3px solid var(--color-primary)', 
-                        padding: '8px 12px', 
-                        background: 'var(--color-bg)', 
-                        borderRadius: '0 6px 6px 0' 
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span className="badge badge-blue text-xs">{h.event_type}</span>
-                        <span className="text-xs text-muted">{new Date(h.created_at).toLocaleString()}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {historyEvents.map(h => {
+                    // Color-code the left border by event type
+                    const borderColors = {
+                      'DEAL_CREATED': '#10b981',
+                      'STAGE_CHANGED': '#6366f1',
+                      'STAGE_BACKWARD': '#f59e0b',
+                      'DEAL_CLOSED': h.new_value?.stage === 'WON' ? '#10b981' : '#ef4444',
+                      'DEAL_REOPENED': '#8b5cf6',
+                      'OWNER_CHANGED': '#3b82f6',
+                      'COLLABORATOR_ADDED': '#06b6d4',
+                      'COLLABORATOR_REMOVED': '#f97316',
+                      'NOTE_ADDED': '#a78bfa',
+                    };
+                    const borderColor = borderColors[h.event_type] || 'var(--color-primary)';
+
+                    // Human-readable labels
+                    const labelMap = {
+                      'DEAL_CREATED': '🆕 Created',
+                      'STAGE_CHANGED': '➡️ Stage Advanced',
+                      'STAGE_BACKWARD': '⬅️ Stage Moved Back',
+                      'DEAL_CLOSED': h.new_value?.stage === 'WON' ? '🏆 Deal Won' : '❌ Deal Lost',
+                      'DEAL_REOPENED': '🔓 Reopened',
+                      'OWNER_CHANGED': '👤 Owner Reassigned',
+                      'COLLABORATOR_ADDED': '➕ Collaborator Added',
+                      'COLLABORATOR_REMOVED': '➖ Collaborator Removed',
+                      'NOTE_ADDED': '📝 Note',
+                    };
+                    const label = labelMap[h.event_type] || h.event_type;
+
+                    return (
+                      <div 
+                        key={h.id} 
+                        style={{ 
+                          borderLeft: `3px solid ${borderColor}`, 
+                          padding: '10px 14px', 
+                          background: 'var(--color-bg)', 
+                          borderRadius: '0 6px 6px 0' 
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: borderColor }}>{label}</span>
+                          <span className="text-xs text-muted">{new Date(h.created_at).toLocaleString()}</span>
+                        </div>
+                        
+                        <div className="text-sm" style={{ color: 'var(--color-text)' }}>
+                          {h.event_type === 'DEAL_CREATED' && (
+                            <span>Created with stage <strong>{h.new_value?.stage}</strong> and value <strong>${h.new_value?.value}</strong></span>
+                          )}
+                          {h.event_type === 'STAGE_CHANGED' && (
+                            <span><strong>{h.old_value?.stage}</strong> → <strong>{h.new_value?.stage}</strong></span>
+                          )}
+                          {h.event_type === 'STAGE_BACKWARD' && (
+                            <div>
+                              <div><strong>{h.old_value?.stage}</strong> → <strong>{h.new_value?.stage}</strong></div>
+                              <div style={{ marginTop: '4px', padding: '6px 10px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '4px', fontSize: '0.8rem', color: '#f59e0b' }}>
+                                Reason: {h.reason}
+                              </div>
+                            </div>
+                          )}
+                          {h.event_type === 'DEAL_CLOSED' && (
+                            <span>Closed as <strong>{h.new_value?.stage}</strong> (was {h.old_value?.stage})</span>
+                          )}
+                          {h.event_type === 'DEAL_REOPENED' && (
+                            <span>Reopened from <strong>{h.old_value?.stage}</strong> back to <strong>{h.new_value?.stage}</strong></span>
+                          )}
+                          {h.event_type === 'OWNER_CHANGED' && (
+                            <span><strong>{h.old_value?.owner_name || `User #${h.old_value?.owner_id}`}</strong> → <strong>{h.new_value?.owner_name || `User #${h.new_value?.owner_id}`}</strong></span>
+                          )}
+                          {h.event_type === 'COLLABORATOR_ADDED' && (
+                            <span>Added <strong>{h.new_value?.user_name}</strong>{h.new_value?.note ? ` — ${h.new_value.note}` : ''}</span>
+                          )}
+                          {h.event_type === 'COLLABORATOR_REMOVED' && (
+                            <span>Removed <strong>{h.old_value?.user_name}</strong></span>
+                          )}
+                          {h.event_type === 'NOTE_ADDED' && (
+                            <div style={{ padding: '6px 10px', background: 'rgba(167, 139, 250, 0.1)', borderRadius: '4px', fontStyle: 'italic' }}>
+                              {h.new_value?.note}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="text-xs text-muted" style={{ marginTop: '4px' }}>
+                          {h.actor?.full_name || `User #${h.actor_id}`}
+                        </div>
                       </div>
-                      
-                      <div className="text-sm text-white">
-                        {h.event_type === 'DEAL_CREATED' && (
-                          <span>Created deal with initial stage <strong>{h.new_value?.stage}</strong> and value <strong>${h.new_value?.value}</strong></span>
-                        )}
-                        {h.event_type === 'OWNER_CHANGED' && (
-                          <span>Reassigned owner from <strong>{h.old_value?.owner_name || h.old_value?.owner_id}</strong> to <strong>{h.new_value?.owner_name || h.new_value?.owner_id}</strong></span>
-                        )}
-                        {h.event_type === 'COLLABORATOR_ADDED' && (
-                          <span>Added collaborator <strong>{h.new_value?.user_name}</strong></span>
-                        )}
-                        {h.event_type === 'COLLABORATOR_REMOVED' && (
-                          <span>Removed collaborator <strong>{h.old_value?.user_name}</strong></span>
-                        )}
-                        {h.event_type === 'STAGE_CHANGED' && (
-                          <span>Stage changed from {h.old_value?.stage} to {h.new_value?.stage}</span>
-                        )}
-                        {h.event_type === 'STAGE_BACKWARD' && (
-                          <span>Stage moved back: {h.old_value?.stage} → {h.new_value?.stage} (Reason: {h.reason})</span>
-                        )}
-                      </div>
-                      
-                      <div className="text-xs text-muted mt-1">
-                        By: {h.actor?.full_name || `User #${h.actor_id}`}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
