@@ -53,5 +53,9 @@ class DealHistory(db.Model):
                 'id': self.actor.id,
                 'full_name': self.actor.full_name,
             } if self.actor else None,
-            'created_at': self.created_at.isoformat(),
+            'created_at': (
+                self.created_at.replace(tzinfo=timezone.utc).isoformat()
+                if self.created_at.tzinfo is None
+                else self.created_at.isoformat()
+            ),
         }

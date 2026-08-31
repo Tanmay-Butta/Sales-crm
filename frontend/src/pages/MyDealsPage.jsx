@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { 
   ListTodo, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, X, UserPlus, Trash,
-  ArrowRight, ArrowLeft, CheckCircle2, XCircle, Lock
+  ArrowRight, ArrowLeft, CheckCircle2, XCircle, Lock, RotateCcw, MessageSquare, Sparkles, UserCheck, UserMinus
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -774,7 +774,10 @@ export default function MyDealsPage() {
           <div className="modal" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
               <div>
-                <h3>📋 Deal Timeline</h3>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <History size={20} />
+                  Deal Timeline
+                </h3>
                 <p className="text-muted text-xs mt-1">{historyModalDeal.title} — Immutable audit trail</p>
               </div>
               <button className="modal-close" onClick={() => setHistoryModalDeal(null)}>✕</button>
@@ -809,90 +812,179 @@ export default function MyDealsPage() {
               ) : historyEvents.length === 0 ? (
                 <div className="text-muted text-center p-4">No timeline events yet. Add a note to get started.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {historyEvents.map(h => {
-                    // Color-code the left border by event type
-                    const borderColors = {
-                      'DEAL_CREATED': '#10b981',
-                      'STAGE_CHANGED': '#6366f1',
-                      'STAGE_BACKWARD': '#f59e0b',
-                      'DEAL_CLOSED': h.new_value?.stage === 'WON' ? '#10b981' : '#ef4444',
-                      'DEAL_REOPENED': '#8b5cf6',
-                      'OWNER_CHANGED': '#3b82f6',
-                      'COLLABORATOR_ADDED': '#06b6d4',
-                      'COLLABORATOR_REMOVED': '#f97316',
-                      'NOTE_ADDED': '#a78bfa',
-                    };
-                    const borderColor = borderColors[h.event_type] || 'var(--color-primary)';
+                <div style={{ position: 'relative', padding: '8px 4px' }}>
+                  {historyEvents.map((h, idx) => {
+                    const isLast = idx === historyEvents.length - 1;
+                    
+                    let icon = <History size={14} style={{ color: '#818cf8' }} />;
+                    let actionElement = null;
+                    let badgeBg = 'rgba(99, 102, 241, 0.12)';
+                    let badgeBorder = 'rgba(99, 102, 241, 0.3)';
 
-                    // Human-readable labels
-                    const labelMap = {
-                      'DEAL_CREATED': '🆕 Created',
-                      'STAGE_CHANGED': '➡️ Stage Advanced',
-                      'STAGE_BACKWARD': '⬅️ Stage Moved Back',
-                      'DEAL_CLOSED': h.new_value?.stage === 'WON' ? '🏆 Deal Won' : '❌ Deal Lost',
-                      'DEAL_REOPENED': '🔓 Reopened',
-                      'OWNER_CHANGED': '👤 Owner Reassigned',
-                      'COLLABORATOR_ADDED': '➕ Collaborator Added',
-                      'COLLABORATOR_REMOVED': '➖ Collaborator Removed',
-                      'NOTE_ADDED': '📝 Note',
-                    };
-                    const label = labelMap[h.event_type] || h.event_type;
+                    if (h.event_type === 'DEAL_CREATED') {
+                      icon = <Sparkles size={14} style={{ color: '#38bdf8' }} />;
+                      badgeBg = 'rgba(56, 189, 248, 0.12)';
+                      badgeBorder = 'rgba(56, 189, 248, 0.3)';
+                      actionElement = (
+                        <span>created deal in <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> stage with value <strong>${Number(h.new_value?.value || 0).toLocaleString()}</strong></span>
+                      );
+                    } else if (h.event_type === 'STAGE_CHANGED') {
+                      icon = <ArrowRight size={14} style={{ color: '#818cf8' }} />;
+                      badgeBg = 'rgba(129, 140, 248, 0.12)';
+                      badgeBorder = 'rgba(129, 140, 248, 0.3)';
+                      actionElement = (
+                        <span>advanced stage from <span className={`badge badge-${h.old_value?.stage?.toLowerCase()}`}>{h.old_value?.stage}</span> to <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span></span>
+                      );
+                    } else if (h.event_type === 'STAGE_BACKWARD') {
+                      icon = <RotateCcw size={14} style={{ color: '#fbbf24' }} />;
+                      badgeBg = 'rgba(251, 191, 36, 0.12)';
+                      badgeBorder = 'rgba(251, 191, 36, 0.3)';
+                      actionElement = (
+                        <span>moved stage backward from <span className={`badge badge-${h.old_value?.stage?.toLowerCase()}`}>{h.old_value?.stage}</span> to <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span></span>
+                      );
+                    } else if (h.event_type === 'DEAL_CLOSED') {
+                      const isWon = h.new_value?.stage === 'WON';
+                      icon = isWon ? <CheckCircle2 size={14} style={{ color: '#34d399' }} /> : <XCircle size={14} style={{ color: '#f87171' }} />;
+                      badgeBg = isWon ? 'rgba(52, 211, 153, 0.12)' : 'rgba(248, 113, 113, 0.12)';
+                      badgeBorder = isWon ? 'rgba(52, 211, 153, 0.3)' : 'rgba(248, 113, 113, 0.3)';
+                      actionElement = (
+                        <span>closed deal as <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> <span className="text-muted text-xs">(last stage was {h.old_value?.stage})</span></span>
+                      );
+                    } else if (h.event_type === 'DEAL_REOPENED') {
+                      icon = <RotateCcw size={14} style={{ color: '#a78bfa' }} />;
+                      badgeBg = 'rgba(167, 139, 250, 0.12)';
+                      badgeBorder = 'rgba(167, 139, 250, 0.3)';
+                      actionElement = (
+                        <span>reopened deal to <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> stage</span>
+                      );
+                    } else if (h.event_type === 'OWNER_CHANGED') {
+                      icon = <UserCheck size={14} style={{ color: '#22d3ee' }} />;
+                      badgeBg = 'rgba(34, 211, 238, 0.12)';
+                      badgeBorder = 'rgba(34, 211, 238, 0.3)';
+                      actionElement = (
+                        <span>reassigned owner to <strong>{h.new_value?.owner_name || `User #${h.new_value?.owner_id}`}</strong> <span className="text-muted text-xs">(previous: {h.old_value?.owner_name || `User #${h.old_value?.owner_id}`})</span></span>
+                      );
+                    } else if (h.event_type === 'COLLABORATOR_ADDED') {
+                      icon = <UserPlus size={14} style={{ color: '#2dd4bf' }} />;
+                      badgeBg = 'rgba(45, 212, 191, 0.12)';
+                      badgeBorder = 'rgba(45, 212, 191, 0.3)';
+                      actionElement = (
+                        <span>added collaborator <strong>{h.new_value?.user_name}</strong>{h.new_value?.note ? ` (${h.new_value.note})` : ''}</span>
+                      );
+                    } else if (h.event_type === 'COLLABORATOR_REMOVED') {
+                      icon = <UserMinus size={14} style={{ color: '#94a3b8' }} />;
+                      badgeBg = 'rgba(148, 163, 184, 0.12)';
+                      badgeBorder = 'rgba(148, 163, 184, 0.3)';
+                      actionElement = (
+                        <span>removed collaborator <strong>{h.old_value?.user_name}</strong></span>
+                      );
+                    } else if (h.event_type === 'NOTE_ADDED') {
+                      icon = <MessageSquare size={14} style={{ color: '#818cf8' }} />;
+                      badgeBg = 'rgba(129, 140, 248, 0.12)';
+                      badgeBorder = 'rgba(129, 140, 248, 0.3)';
+                      actionElement = <span>added a note</span>;
+                    }
+
+                    const rawDate = h.created_at ? (h.created_at.endsWith('Z') || h.created_at.includes('+') ? h.created_at : h.created_at + 'Z') : new Date().toISOString();
+                    const dateObj = new Date(rawDate);
+                    const timeStr = dateObj.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+                    const dateStr = dateObj.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
 
                     return (
-                      <div 
-                        key={h.id} 
-                        style={{ 
-                          borderLeft: `3px solid ${borderColor}`, 
-                          padding: '10px 14px', 
-                          background: 'var(--color-bg)', 
-                          borderRadius: '0 6px 6px 0' 
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: borderColor }}>{label}</span>
-                          <span className="text-xs text-muted">{new Date(h.created_at).toLocaleString()}</span>
+                      <div key={h.id} style={{ position: 'relative', display: 'flex', gap: '14px', paddingBottom: isLast ? '6px' : '22px' }}>
+                        {/* Connecting line */}
+                        {!isLast && (
+                          <div style={{
+                            position: 'absolute',
+                            left: '15px',
+                            top: '30px',
+                            bottom: '0',
+                            width: '2px',
+                            background: 'var(--color-border)'
+                          }} />
+                        )}
+
+                        {/* Icon Node */}
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          background: badgeBg,
+                          border: `1px solid ${badgeBorder}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          zIndex: 1
+                        }}>
+                          {icon}
                         </div>
-                        
-                        <div className="text-sm" style={{ color: 'var(--color-text)' }}>
-                          {h.event_type === 'DEAL_CREATED' && (
-                            <span>Created with stage <strong>{h.new_value?.stage}</strong> and value <strong>${h.new_value?.value}</strong></span>
-                          )}
-                          {h.event_type === 'STAGE_CHANGED' && (
-                            <span><strong>{h.old_value?.stage}</strong> → <strong>{h.new_value?.stage}</strong></span>
-                          )}
-                          {h.event_type === 'STAGE_BACKWARD' && (
-                            <div>
-                              <div><strong>{h.old_value?.stage}</strong> → <strong>{h.new_value?.stage}</strong></div>
-                              <div style={{ marginTop: '4px', padding: '6px 10px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '4px', fontSize: '0.8rem', color: '#f59e0b' }}>
-                                Reason: {h.reason}
-                              </div>
+
+                        {/* Content Area */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {/* Fixed Header Row: Author on left, Timestamp on right */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--color-text)' }}>
+                              {h.actor?.full_name || `User #${h.actor_id}`}
+                            </span>
+                            <span style={{ 
+                              fontSize: '0.8rem', 
+                              background: 'var(--color-bg-tertiary)', 
+                              border: '1px solid var(--color-border)', 
+                              padding: '2px 9px', 
+                              borderRadius: '6px', 
+                              whiteSpace: 'nowrap', 
+                              marginLeft: '12px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}>
+                              <strong style={{ color: 'var(--color-text)', fontSize: '0.825rem' }}>{timeStr}</strong>
+                              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.725rem' }}>{dateStr}</span>
+                            </span>
+                          </div>
+
+                          {/* Action Subtitle (for non-notes or lifecycle actions) */}
+                          {h.event_type !== 'NOTE_ADDED' && (
+                            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                              {actionElement}
                             </div>
                           )}
-                          {h.event_type === 'DEAL_CLOSED' && (
-                            <span>Closed as <strong>{h.new_value?.stage}</strong> (was {h.old_value?.stage})</span>
-                          )}
-                          {h.event_type === 'DEAL_REOPENED' && (
-                            <span>Reopened from <strong>{h.old_value?.stage}</strong> back to <strong>{h.new_value?.stage}</strong></span>
-                          )}
-                          {h.event_type === 'OWNER_CHANGED' && (
-                            <span><strong>{h.old_value?.owner_name || `User #${h.old_value?.owner_id}`}</strong> → <strong>{h.new_value?.owner_name || `User #${h.new_value?.owner_id}`}</strong></span>
-                          )}
-                          {h.event_type === 'COLLABORATOR_ADDED' && (
-                            <span>Added <strong>{h.new_value?.user_name}</strong>{h.new_value?.note ? ` — ${h.new_value.note}` : ''}</span>
-                          )}
-                          {h.event_type === 'COLLABORATOR_REMOVED' && (
-                            <span>Removed <strong>{h.old_value?.user_name}</strong></span>
-                          )}
-                          {h.event_type === 'NOTE_ADDED' && (
-                            <div style={{ padding: '6px 10px', background: 'rgba(167, 139, 250, 0.1)', borderRadius: '4px', fontStyle: 'italic' }}>
-                              {h.new_value?.note}
+
+                          {/* Note Card */}
+                          {h.event_type === 'NOTE_ADDED' && h.new_value?.note && (
+                            <div style={{
+                              marginTop: '4px',
+                              background: 'var(--color-bg-card)',
+                              border: '1px solid var(--color-border)',
+                              borderRadius: '8px',
+                              padding: '10px 14px',
+                              fontSize: '0.875rem',
+                              color: 'var(--color-text)',
+                              lineHeight: 1.5,
+                              wordBreak: 'break-word',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                            }}>
+                              {h.new_value.note}
                             </div>
                           )}
-                        </div>
-                        
-                        <div className="text-xs text-muted" style={{ marginTop: '4px' }}>
-                          {h.actor?.full_name || `User #${h.actor_id}`}
+
+                          {/* Backward Stage Reason */}
+                          {h.event_type === 'STAGE_BACKWARD' && h.reason && (
+                            <div style={{
+                              marginTop: '6px',
+                              background: 'rgba(245, 158, 11, 0.08)',
+                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              borderRadius: '8px',
+                              padding: '8px 12px',
+                              fontSize: '0.825rem',
+                              color: '#fbbf24',
+                              fontStyle: 'italic',
+                              lineHeight: 1.4
+                            }}>
+                              Reason: "{h.reason}"
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
