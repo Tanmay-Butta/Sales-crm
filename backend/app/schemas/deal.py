@@ -20,6 +20,13 @@ class DealUpdateSchema(Schema):
     owner_id = fields.Int(required=False)
     keep_previous_owner_as_collaborator = fields.Bool(required=False, load_default=False)
 
+from app.utils.constants import Stages
+
+class DealStageChangeSchema(Schema):
+    stage = fields.Str(required=True, validate=validate.OneOf(Stages.ALL))
+    reason = fields.Str(required=False, allow_none=True)
+
 # Initialize schema instances
 deal_create_schema = DealCreateSchema()
 deal_update_schema = DealUpdateSchema()
+deal_stage_change_schema = DealStageChangeSchema()

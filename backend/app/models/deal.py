@@ -1,45 +1,46 @@
 """
-Deal model — the core business entity.
-Belongs to one company, owned by one sales rep.
-Uses NUMERIC(15,2) for exact decimal monetary values.
+Deal model for the Sales CRM application.
+Represents sales opportunities associated with companies and assigned to Sales Reps.
 """
 
-from app.extensions import db
-from app.utils.constants import Stages, WIN_PROBABILITIES
 from datetime import datetime, timezone
 from decimal import Decimal
+from app.extensions import db
+from app.utils.constants import Stages, WIN_PROBABILITIES
 
 
 class Deal(db.Model):
+    """Deal entity."""
+
     __tablename__ = 'deals'
 
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
-    value = db.Column(db.Numeric(15, 2), nullable=False)  # Exact decimal, never float
+    value = db.Column(db.Numeric(15, 2), nullable=False)
     expected_close_date = db.Column(db.Date, nullable=False)
-    stage = db.Column(
-        db.String(20), nullable=False, default=Stages.NEW, index=True,
+    stage = db.Column(db.String(20), nullable=False, default=Stages.NEW)
+    previous_stage = db.Column(db.String(20), nullable=True)  # Stage before Won/Lost for reopen
+    closed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    company_id = db.Column(
+        db.Integer, db.ForeignKey('companies.id'), nullable=False, index=True
     )
-    # Stored before Won/Lost so reopen can restore it
-    previous_stage = db.Column(db.String(20), nullable=True)
+    owner_id = db.Column(
+        db.Integer, db.ForeignKey('users.id'), nullable=False, index=True
+    )
 
-    # Foreign keys
-    company_id = db.Column(db.Integer, db.ForeignKey('companies.id'), nullable=False, index=True)
-    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-
-    # Timestamps
-    closed_at = db.Column(db.DateTime, nullable=True, index=True)  # Set on Won/Lost, cleared on reopen
-    deleted_at = db.Column(db.DateTime, nullable=True)  # Soft delete
-
-    # Alert dismissal tracking
     alert_dismissed_for_date = db.Column(db.Date, nullable=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = db.Column(
-        db.DateTime, nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc)
     )
+    updated_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+    deleted_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     # Relationships
     collaborators = db.relationship(
@@ -48,6 +49,7 @@ class Deal(db.Model):
     )
     history = db.relationship(
         'DealHistory', backref='deal', lazy='dynamic',
+        cascade='all, delete-orphan',
         order_by='DealHistory.created_at.asc()',
     )
 

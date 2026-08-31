@@ -1,10 +1,10 @@
 """
-Deals routes - endpoints for Deals CRUD, My Deals, Collaborators, and History.
+Deals routes - endpoints for Deals CRUD, My Deals, Collaborators, History, and Lifecycle state machine.
 """
 
 from flask import Blueprint, request, jsonify
 from app.middleware.auth import auth_required
-from app.schemas.deal import deal_create_schema, deal_update_schema
+from app.schemas.deal import deal_create_schema, deal_update_schema, deal_stage_change_schema
 from app.services import deal_service
 from app.utils.exceptions import ValidationError
 
@@ -63,6 +63,33 @@ def delete_deal(current_user, deal_id):
     """Soft-delete a deal."""
     deal_service.delete_deal(current_user, deal_id)
     return jsonify({'message': 'Deal deleted successfully'}), 200
+
+
+# --- Lifecycle & State Machine Endpoints ---
+
+@deals_bp.route('/<int:deal_id>/stage', methods=['POST'])
+@auth_required
+def change_stage(current_user, deal_id):
+    """Transition a deal stage (forward, backward with reason, or close)."""
+    data = deal_stage_change_schema.load(request.get_json())
+    deal = deal_service.change_deal_stage(
+        current_user, deal_id, data['stage'], data.get('reason')
+    )
+    return jsonify({
+        'deal': deal.to_dict(include_company=True, include_owner=True, include_collaborators=True),
+        'message': f"Deal moved to {deal.stage}"
+    }), 200
+
+
+@deals_bp.route('/<int:deal_id>/reopen', methods=['POST'])
+@auth_required
+def reopen_deal(current_user, deal_id):
+    """Reopen a closed deal to its previous open stage (Sales Manager only)."""
+    deal = deal_service.reopen_deal(current_user, deal_id)
+    return jsonify({
+        'deal': deal.to_dict(include_company=True, include_owner=True, include_collaborators=True),
+        'message': f"Deal reopened to {deal.stage}"
+    }), 200
 
 
 # --- Collaborator Endpoints ---

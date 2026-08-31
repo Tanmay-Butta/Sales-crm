@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
-  Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash
+  Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash,
+  ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -29,6 +30,12 @@ export default function DealsPage() {
     owner_id: ""
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Backward Reason Modal state
+  const [backwardModalDeal, setBackwardModalDeal] = useState(null);
+  const [backwardTargetStage, setBackwardTargetStage] = useState("");
+  const [backwardReason, setBackwardReason] = useState("");
+  const [backwardSubmitting, setBackwardSubmitting] = useState(false);
 
   // Collaborators Modal state
   const [collabModalDeal, setCollabModalDeal] = useState(null);
@@ -218,6 +225,70 @@ export default function DealsPage() {
     }
   };
 
+  // Stage Advance Handler
+  const handleAdvanceStage = async (deal, nextStage) => {
+    try {
+      await dealsAPI.changeStage(deal.id, nextStage);
+      toast.success(`Deal advanced to ${nextStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to advance stage");
+    }
+  };
+
+  // Open Backward Reason Modal
+  const openBackwardModal = (deal, targetStage) => {
+    setBackwardModalDeal(deal);
+    setBackwardTargetStage(targetStage);
+    setBackwardReason("");
+  };
+
+  // Submit Backward Move
+  const handleBackwardSubmit = async (e) => {
+    e.preventDefault();
+    if (!backwardReason.trim()) {
+      toast.error("Please provide a reason for moving the deal backward.");
+      return;
+    }
+
+    setBackwardSubmitting(true);
+    try {
+      await dealsAPI.changeStage(backwardModalDeal.id, backwardTargetStage, backwardReason.trim());
+      toast.success(`Deal moved back to ${backwardTargetStage}`);
+      setBackwardModalDeal(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to move deal backward");
+    } finally {
+      setBackwardSubmitting(false);
+    }
+  };
+
+  // Close Deal Handler (Won / Lost from Negotiation)
+  const handleCloseDeal = async (deal, closeStage) => {
+    if (!window.confirm(`Mark deal "${deal.title}" as ${closeStage}? This will close the deal.`)) return;
+    try {
+      await dealsAPI.changeStage(deal.id, closeStage);
+      toast.success(`Deal marked as ${closeStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to close deal");
+    }
+  };
+
+  // Reopen Deal Handler (Sales Manager only)
+  const handleReopenDeal = async (deal) => {
+    const prev = deal.previous_stage || 'Negotiation';
+    if (!window.confirm(`Reopen "${deal.title}"? It will restore to its pre-close stage (${prev}).`)) return;
+    try {
+      await dealsAPI.reopenDeal(deal.id);
+      toast.success(`Deal reopened to ${prev}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to reopen deal");
+    }
+  };
+
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -236,6 +307,18 @@ export default function DealsPage() {
       LOST: 'badge-red'
     };
     return `badge ${colors[stage] || 'badge-gray'}`;
+  };
+
+  const getProbabilityLabel = (stage) => {
+    const probs = {
+      NEW: '10%',
+      QUALIFIED: '25%',
+      PROPOSAL: '50%',
+      NEGOTIATION: '75%',
+      WON: '100%',
+      LOST: '0%'
+    };
+    return probs[stage] || '0%';
   };
 
   // Helper to determine why the current user sees this deal
@@ -376,12 +459,129 @@ export default function DealsPage() {
                         {deal.company?.name || "Unknown"}
                       </div>
                     </td>
-                    <td className="font-medium">{formatCurrency(deal.value)}</td>
+                    <td className="font-medium">
+                      <div className="font-medium text-white">{formatCurrency(deal.value)}</div>
+                      {!deal.is_closed && (
+                        <div className="text-xs text-muted" style={{ marginTop: '2px' }} title={`Weighted at ${getProbabilityLabel(deal.stage)} probability`}>
+                          Wt: {formatCurrency(deal.weighted_value || (deal.value * (deal.win_probability || 0)))}
+                        </div>
+                      )}
+                    </td>
                     <td>{new Date(deal.expected_close_date).toLocaleDateString()}</td>
                     <td>
-                      <span className={getStageBadge(deal.stage)}>
-                        {deal.stage}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={getStageBadge(deal.stage)}>
+                            {deal.stage} ({getProbabilityLabel(deal.stage)})
+                          </span>
+                          {deal.is_closed && (
+                            <span className="badge badge-gray text-xs" title={deal.closed_at ? `Closed on ${new Date(deal.closed_at).toLocaleDateString()}` : 'Closed'}>
+                              <Lock size={10} style={{ marginRight: '3px' }} /> Closed
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Quick Lifecycle Stage Transition Actions */}
+                        {canEdit && !deal.is_closed && (
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {deal.stage === 'NEW' && (
+                              <button 
+                                className="btn btn-xs btn-primary" 
+                                style={{ padding: '2px 8px', fontSize: '11px' }}
+                                onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
+                                title="Advance to Qualified"
+                              >
+                                Advance <ArrowRight size={12} />
+                              </button>
+                            )}
+
+                            {deal.stage === 'QUALIFIED' && (
+                              <>
+                                <button 
+                                  className="btn btn-xs btn-ghost text-muted" 
+                                  style={{ padding: '2px 6px', fontSize: '11px' }}
+                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'NEW'); }}
+                                  title="Move back to New (requires reason)"
+                                >
+                                  <ArrowLeft size={12} /> Back
+                                </button>
+                                <button 
+                                  className="btn btn-xs btn-primary" 
+                                  style={{ padding: '2px 8px', fontSize: '11px' }}
+                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'PROPOSAL'); }}
+                                  title="Advance to Proposal"
+                                >
+                                  Advance <ArrowRight size={12} />
+                                </button>
+                              </>
+                            )}
+
+                            {deal.stage === 'PROPOSAL' && (
+                              <>
+                                <button 
+                                  className="btn btn-xs btn-ghost text-muted" 
+                                  style={{ padding: '2px 6px', fontSize: '11px' }}
+                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'QUALIFIED'); }}
+                                  title="Move back to Qualified (requires reason)"
+                                >
+                                  <ArrowLeft size={12} /> Back
+                                </button>
+                                <button 
+                                  className="btn btn-xs btn-primary" 
+                                  style={{ padding: '2px 8px', fontSize: '11px' }}
+                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'NEGOTIATION'); }}
+                                  title="Advance to Negotiation"
+                                >
+                                  Advance <ArrowRight size={12} />
+                                </button>
+                              </>
+                            )}
+
+                            {deal.stage === 'NEGOTIATION' && (
+                              <>
+                                <button 
+                                  className="btn btn-xs btn-ghost text-muted" 
+                                  style={{ padding: '2px 6px', fontSize: '11px' }}
+                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'PROPOSAL'); }}
+                                  title="Move back to Proposal (requires reason)"
+                                >
+                                  <ArrowLeft size={12} /> Back
+                                </button>
+                                <button 
+                                  className="btn btn-xs" 
+                                  style={{ background: '#10b981', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
+                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'WON'); }}
+                                  title="Mark deal Won"
+                                >
+                                  <CheckCircle2 size={12} /> Won
+                                </button>
+                                <button 
+                                  className="btn btn-xs" 
+                                  style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
+                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'LOST'); }}
+                                  title="Mark deal Lost"
+                                >
+                                  <XCircle size={12} /> Lost
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Reopen button for Sales Manager when deal is closed */}
+                        {isManager && deal.is_closed && (
+                          <div>
+                            <button 
+                              className="btn btn-xs btn-ghost text-primary" 
+                              style={{ border: '1px solid var(--color-primary)', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              onClick={(e) => { e.stopPropagation(); handleReopenDeal(deal); }}
+                              title={`Reopen deal to ${deal.previous_stage || 'Negotiation'}`}
+                            >
+                              <RotateCcw size={12} /> Reopen Deal
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -744,6 +944,61 @@ export default function DealsPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backward Reason Modal */}
+      {backwardModalDeal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setBackwardModalDeal(null); }}>
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <h3>Move Deal Backward</h3>
+                <p className="text-muted text-xs mt-1">
+                  Moving <strong>{backwardModalDeal.title}</strong> from {backwardModalDeal.stage} back to {backwardTargetStage}
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setBackwardModalDeal(null)}>✕</button>
+            </div>
+            
+            <form onSubmit={handleBackwardSubmit}>
+              <div className="modal-body">
+                <div style={{
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  marginBottom: '16px'
+                }}>
+                  <p className="text-xs" style={{ color: '#facc15', margin: 0, lineHeight: 1.4 }}>
+                    Per CRM policy, moving a deal backward requires a recorded explanation for the deal audit trail.
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Reason for Moving Backward *</label>
+                  <textarea
+                    className="form-input"
+                    rows="3"
+                    required
+                    placeholder="e.g., Client requested revised proposal and additional pricing tiers..."
+                    value={backwardReason}
+                    onChange={(e) => setBackwardReason(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setBackwardModalDeal(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={backwardSubmitting || !backwardReason.trim()}>
+                  {backwardSubmitting ? "Moving..." : "Confirm Move Backward"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
