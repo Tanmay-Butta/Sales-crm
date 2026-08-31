@@ -81,6 +81,10 @@ def create_deal(current_user, data):
     if company.archived_at:
         raise ValidationError("Cannot create a deal for an archived company", code=ErrorCodes.COMPANY_ARCHIVED)
 
+    # Security check: User must have visibility to the company to attach a deal to it.
+    if not visibility_service.can_view_company(current_user, company):
+        raise AuthorizationError("You do not have permission to attach deals to this company.")
+
     # Manager vs Rep owner assignment
     if current_user.role == Roles.SALES_REP:
         data['owner_id'] = current_user.id

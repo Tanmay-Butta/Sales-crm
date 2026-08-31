@@ -156,3 +156,28 @@ The AI tried to be "helpful" by disabling illegal stage options in the dropdown 
 
 **My Correction:**
 I directed the AI to keep the dropdown options and buttons clickable during testing mode, ensuring that when an invalid move (e.g. `NEW` → `PROPOSAL` or backward without reason) is selected, the request hits the backend API, the backend rejects it with `INVALID_STAGE_TRANSITION` or `BACKWARD_REASON_REQUIRED`, and the frontend toast displays the exact backend error message to the user.
+
+## 5. Preventing Unauthorized Deal Creation (Goal 9)
+
+### The Pre-Story Plan & Context
+i did the testing of all the rules rigourously but toady While i was testing the deal timeline, I started wondering what would happen if someone tried to bypass the frontend UI as frontend was showing a drop down list comming from backend while creating a deal. The frontend only shows reps the companies they are allowed to see in the "New Deal" dropdown. But what if a rep used a tool like Postman to send a request with the ID of a company they *aren't* allowed to see?
+
+### Prompt
+```text
+now for testing i just want you to open the drop down to all companies ....like the companies bob cant see also i just want to test something
+I want to test what happens if Bob tries to create a deal for a company he's not allowed to see i just wanted to test the backend only like if bob try to create a deal for a company he cant see what will happen that test dont cahneg the backend just the frontend part you can touch i have added backend for your context.
+```
+
+### What AI Generated / Discovered
+The AI checked the `create_deal` function in the backend and realized we actually had a gap. The code checked if the company existed and wasn't archived, but it completely forgot to check if the user actually had permission to view that company! 
+
+### What was Wrong & What I Corrected
+**Problem:** The backend was blindly trusting that the user was only sending valid company IDs from the frontend dropdown. If someone bypassed the UI, they could attach a deal to a company they shouldn't even know about.
+
+**My Correction:**
+I told the AI we need to lock this down in the backend so it doesn't just rely on the frontend. We added a strict visibility check inside `create_deal`:
+```python
+if not visibility_service.can_view_company(current_user, company):
+    raise AuthorizationError("You do not have permission to attach deals to this company.")
+```
+Now, if anyone tries to send a sneaky request for a hidden company, the server rejects it with a `403 Forbidden` error.
