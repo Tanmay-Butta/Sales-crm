@@ -57,5 +57,10 @@ export const dealsAPI = {
   // Manager-only Deal Reopening
   reopenDeal: (dealId) => {
     return client.post(`/deals/${dealId}/reopen`);
+  },
+
+  // Immutable Notes (append-only, §9)
+  addNote: (dealId, note) => {
+    return client.post(`/deals/${dealId}/notes`, { note });
   }
 };

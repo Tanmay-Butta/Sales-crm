@@ -52,6 +52,11 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Silently guessing or defaulting the reopen target to `NEGOTIATION` when `previous_stage` is null.
 - **Why:** Silently defaulting a corrupted state turns an underlying data-integrity bug into a hidden defect. If a deal was closed from an unexpected state or corrupted during a database migration, defaulting masks the issue and creates an invalid pipeline state. Raising a loud, debuggable `INVARIANT_VIOLATION` makes the failure explicit and prevents unverified state transitions.
 
+## Decision 10: Flexible Deal Creation under Visible Companies (Account-Based Ecosystem)
+- **Chose:** Allowing any sales rep to create a new deal under any company they have visibility into (e.g., if Bob collaborates on one deal for Company Beta, he can see Company Beta and therefore create a *new* deal under Company Beta).
+- **Rejected:** Strictly locking down deal creation so that *only* the specific owner of a company can create new deals under it.
+- **Why:** The `README.md` states "Sales reps create companies and deals" without explicitly restricting deal creation to the company's owner. In real-world enterprise CRMs (like Salesforce or HubSpot), an Account-Based Selling model is standard: a senior Account Executive owns the Company, but specialists or junior reps can uncover new opportunities, create new deals, and own those deals under the overarching account. The Company Owner benefits by retaining automatic visibility over all activity in their account. Locking this down would artificially force reps to create duplicate companies (e.g. "Beta LLC") just to log their deals, ruining reporting accuracy.
+
 ---
 
 ### Assumptions & Business Rules

@@ -81,6 +81,10 @@ def create_deal(current_user, data):
     if company.archived_at:
         raise ValidationError("Cannot create a deal for an archived company", code=ErrorCodes.COMPANY_ARCHIVED)
 
+    # Security check: User must have visibility to the company to attach a deal to it.
+    if not visibility_service.can_view_company(current_user, company):
+        raise AuthorizationError("You do not have permission to attach deals to this company.")
+
     # Manager vs Rep owner assignment
     if current_user.role == Roles.SALES_REP:
         data['owner_id'] = current_user.id
@@ -418,7 +422,7 @@ def change_deal_stage(current_user, deal_id, target_stage, reason=None):
         deal.closed_at = datetime.now(timezone.utc)
         history_entry = DealHistory(
             deal_id=deal.id,
-            event_type=EventTypes.STAGE_CHANGED,
+            event_type=EventTypes.DEAL_CLOSED,
             old_value={'stage': old_stage},
             new_value={'stage': target_stage},
             actor_id=current_user.id,
@@ -426,6 +430,8 @@ def change_deal_stage(current_user, deal_id, target_stage, reason=None):
         )
         db.session.add(history_entry)
 
+    # Single atomic commit: deal mutation + history entry together.
+    # Either both succeed or neither does — no orphaned history or missing audit trail.
     db.session.commit()
     return deal
 
@@ -468,5 +474,35 @@ def reopen_deal(current_user, deal_id):
         created_at=datetime.now(timezone.utc)
     )
     db.session.add(history_entry)
+    # Atomic: deal state change + history entry committed together
     db.session.commit()
     return deal
+
+
+def add_note(current_user, deal_id, note_text):
+    """Add an immutable note to a deal's audit timeline.
+
+    Notes are append-only entries in the deal_history table.
+    Once created, they cannot be edited or deleted — even by managers (§9).
+    The note and its history entry are committed atomically.
+    """
+    deal = get_deal(current_user, deal_id)
+
+    if not can_edit_deal(current_user, deal):
+        raise AuthorizationError("You do not have permission to add notes to this deal")
+
+    clean_note = note_text.strip()
+    if not clean_note:
+        raise ValidationError("Note text cannot be empty", code=ErrorCodes.VALIDATION_ERROR)
+
+    history_entry = DealHistory(
+        deal_id=deal.id,
+        event_type=EventTypes.NOTE_ADDED,
+        old_value=None,
+        new_value={'note': clean_note},
+        actor_id=current_user.id,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.session.add(history_entry)
+    db.session.commit()
+    return history_entry
