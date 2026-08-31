@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash,
   ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock, MessageSquare, Sparkles, UserCheck, UserMinus,
-  Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, SlidersHorizontal
+  Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, SlidersHorizontal, ChevronDown, Check
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -26,7 +26,11 @@ export default function DealsPage() {
   // Server-side Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filterCompany, setFilterCompany] = useState("");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
+  const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
+  const [companyFilterSearch, setCompanyFilterSearch] = useState("");
+  const companyDropdownRef = useRef(null);
+
   const [filterStage, setFilterStage] = useState("");
   const [filterOwner, setFilterOwner] = useState("");
   const [viewMode, setViewMode] = useState("ALL"); // 'ALL' | 'MY_DEALS' | 'VIA_COMPANY'
@@ -70,6 +74,17 @@ export default function DealsPage() {
   const [noteText, setNoteText] = useState("");
   const [noteSubmitting, setNoteSubmitting] = useState(false);
 
+  // Close company dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target)) {
+        setCompanyDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // 1. Debounce search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -98,7 +113,7 @@ export default function DealsPage() {
   // 3. Reset page to 1 whenever search, filters, view mode, or sort change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, filterCompany, filterStage, filterOwner, viewMode, sortBy, sortDir]);
+  }, [debouncedSearch, selectedCompanyIds, filterStage, filterOwner, viewMode, sortBy, sortDir]);
 
   // 4. Fetch deals from server whenever query params change
   const fetchDeals = useCallback(async () => {
@@ -114,8 +129,8 @@ export default function DealsPage() {
       if (debouncedSearch.trim()) {
         params.search = debouncedSearch.trim();
       }
-      if (filterCompany) {
-        params.company_id = filterCompany;
+      if (selectedCompanyIds.length > 0) {
+        params.company_id = selectedCompanyIds.join(',');
       }
       if (filterStage) {
         params.stage = filterStage;
@@ -139,17 +154,28 @@ export default function DealsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, perPage, debouncedSearch, filterCompany, filterStage, filterOwner, viewMode, sortBy, sortDir, isManager]);
+  }, [page, perPage, debouncedSearch, selectedCompanyIds, filterStage, filterOwner, viewMode, sortBy, sortDir, isManager]);
 
   useEffect(() => {
     fetchDeals();
   }, [fetchDeals]);
 
+  // Toggle company in multi-select
+  const toggleCompanySelection = (cid) => {
+    setSelectedCompanyIds(prev => {
+      if (prev.includes(cid)) {
+        return prev.filter(id => id !== cid);
+      } else {
+        return [...prev, cid];
+      }
+    });
+  };
+
   // Clear all filters handler
   const handleClearFilters = () => {
     setSearchQuery("");
     setDebouncedSearch("");
-    setFilterCompany("");
+    setSelectedCompanyIds([]);
     setFilterStage("");
     setFilterOwner("");
     setViewMode("ALL");
@@ -158,7 +184,15 @@ export default function DealsPage() {
     setPage(1);
   };
 
-  const isFiltered = Boolean(searchQuery || filterCompany || filterStage || filterOwner || (!isManager && viewMode !== "ALL") || sortBy !== "updated_at" || sortDir !== "desc");
+  const isFiltered = Boolean(
+    searchQuery ||
+    selectedCompanyIds.length > 0 ||
+    filterStage ||
+    filterOwner ||
+    (!isManager && viewMode !== "ALL") ||
+    sortBy !== "updated_at" ||
+    sortDir !== "desc"
+  );
 
   // Toggle sort direction or change sort column
   const handleSortChange = (newSortBy) => {
@@ -594,18 +628,168 @@ export default function DealsPage() {
           {/* Filter Dropdowns */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
             
-            {/* Company Filter */}
-            <select
-              className="form-select"
-              style={{ width: 'auto', minWidth: '150px', fontSize: '0.85rem' }}
-              value={filterCompany}
-              onChange={(e) => setFilterCompany(e.target.value)}
-            >
-              <option value="">All Companies</option>
-              {companies.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            {/* Multi-Company Selector Dropdown */}
+            <div style={{ position: 'relative' }} ref={companyDropdownRef}>
+              <button
+                type="button"
+                className={`btn ${selectedCompanyIds.length > 0 ? 'btn-primary' : 'btn-secondary'}`}
+                style={{
+                  fontSize: '0.85rem',
+                  padding: '7px 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  minWidth: '155px',
+                  justifyContent: 'space-between'
+                }}
+                onClick={() => setCompanyDropdownOpen(prev => !prev)}
+                title="Select one or multiple companies"
+              >
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Building2 size={14} />
+                  <span>
+                    {selectedCompanyIds.length === 0
+                      ? "All Companies"
+                      : selectedCompanyIds.length === 1
+                      ? companies.find(c => c.id === selectedCompanyIds[0])?.name || "1 Company"
+                      : `${selectedCompanyIds.length} Companies`}
+                  </span>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                  {selectedCompanyIds.length > 1 && (
+                    <span style={{
+                      background: 'rgba(255, 255, 255, 0.25)',
+                      padding: '0 6px',
+                      borderRadius: '10px',
+                      fontSize: '0.725rem',
+                      fontWeight: 700
+                    }}>
+                      {selectedCompanyIds.length}
+                    </span>
+                  )}
+                  <ChevronDown
+                    size={14}
+                    style={{
+                      transform: companyDropdownOpen ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.15s ease'
+                    }}
+                  />
+                </div>
+              </button>
+
+              {/* Multi-Company Dropdown Popover */}
+              {companyDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  width: '280px',
+                  maxHeight: '340px',
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.55)',
+                  zIndex: 100,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}>
+                  {/* Search input inside dropdown */}
+                  <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)' }}>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={13} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                      <input
+                        type="text"
+                        className="form-input"
+                        style={{ paddingLeft: '28px', paddingRight: '8px', fontSize: '0.8rem', padding: '5px 8px 5px 28px', width: '100%' }}
+                        placeholder="Search companies..."
+                        value={companyFilterSearch}
+                        onChange={(e) => setCompanyFilterSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action row: Select All / Clear Selection */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 12px',
+                    borderBottom: '1px solid var(--color-border)',
+                    background: 'var(--color-bg-tertiary)',
+                    fontSize: '0.75rem'
+                  }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem', color: 'var(--color-primary-light)' }}
+                      onClick={() => setSelectedCompanyIds(companies.map(c => c.id))}
+                    >
+                      Select All ({companies.length})
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost text-muted"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                      onClick={() => setSelectedCompanyIds([])}
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  {/* Scrollable Company Checkbox List */}
+                  <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0', maxHeight: '200px' }}>
+                    {companies.filter(c => c.name.toLowerCase().includes(companyFilterSearch.toLowerCase().trim())).length === 0 ? (
+                      <div className="text-muted text-xs text-center" style={{ padding: '16px 10px' }}>
+                        No matching companies found
+                      </div>
+                    ) : (
+                      companies
+                        .filter(c => c.name.toLowerCase().includes(companyFilterSearch.toLowerCase().trim()))
+                        .map(comp => {
+                          const isSelected = selectedCompanyIds.includes(comp.id);
+                          return (
+                            <div
+                              key={comp.id}
+                              onClick={() => toggleCompanySelection(comp.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                fontSize: '0.825rem',
+                                color: isSelected ? '#ffffff' : 'var(--color-text-secondary)',
+                                background: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                                borderLeft: isSelected ? '3px solid var(--color-primary)' : '3px solid transparent',
+                                transition: 'all 0.1s ease'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}} // Handled by parent container click
+                                style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                              />
+                              <span style={{
+                                fontWeight: isSelected ? 600 : 400,
+                                flex: 1,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {comp.name}
+                              </span>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Stage Filter */}
             <select
@@ -673,6 +857,63 @@ export default function DealsPage() {
             )}
           </div>
         </div>
+
+        {/* Selected Companies Multi-Pill Chips */}
+        {selectedCompanyIds.length > 0 && (
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            marginTop: '14px',
+            paddingTop: '12px',
+            borderTop: '1px dashed var(--color-border)',
+            alignItems: 'center'
+          }}>
+            <span className="text-xs text-muted" style={{ marginRight: '4px', fontWeight: 500 }}>
+              Filtered by ({selectedCompanyIds.length}):
+            </span>
+            {selectedCompanyIds.map(cid => {
+              const comp = companies.find(c => c.id === cid);
+              if (!comp) return null;
+              return (
+                <span
+                  key={cid}
+                  className="badge badge-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '3px 8px',
+                    fontSize: '0.75rem',
+                    borderRadius: '6px',
+                    background: 'rgba(99, 102, 241, 0.18)',
+                    border: '1px solid rgba(99, 102, 241, 0.4)',
+                    color: '#e0e7ff'
+                  }}
+                >
+                  <Building2 size={11} />
+                  {comp.name}
+                  <X
+                    size={13}
+                    style={{ cursor: 'pointer', marginLeft: '3px', opacity: 0.7 }}
+                    onMouseEnter={(e) => e.target.style.opacity = 1}
+                    onMouseLeave={(e) => e.target.style.opacity = 0.7}
+                    onClick={() => toggleCompanySelection(cid)}
+                    title={`Remove ${comp.name} filter`}
+                  />
+                </span>
+              );
+            })}
+            <button
+              type="button"
+              className="btn btn-ghost text-muted"
+              style={{ fontSize: '0.725rem', padding: '2px 8px', marginLeft: '4px' }}
+              onClick={() => setSelectedCompanyIds([])}
+            >
+              Clear companies
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table Container */}

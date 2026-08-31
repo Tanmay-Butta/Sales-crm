@@ -67,11 +67,20 @@ def get_deals_paginated(
                 ~Deal.id.in_(collaborating_deal_ids)
             )
 
-    # 3. Company Filter
+    # 3. Company Filter (single ID or multiple IDs comma-separated / list)
     if company_id:
         try:
-            cid = int(company_id)
-            query = query.filter(Deal.company_id == cid)
+            if isinstance(company_id, (list, tuple, set)):
+                cids = [int(x) for x in company_id if str(x).strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            elif isinstance(company_id, str) and ',' in company_id:
+                cids = [int(x.strip()) for x in company_id.split(',') if x.strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            else:
+                cid = int(company_id)
+                query = query.filter(Deal.company_id == cid)
         except (ValueError, TypeError):
             raise ValidationError("Invalid company_id filter", code=ErrorCodes.VALIDATION_ERROR)
 

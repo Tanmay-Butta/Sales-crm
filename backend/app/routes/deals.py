@@ -17,7 +17,11 @@ deals_bp = Blueprint('deals', __name__, url_prefix='/api/deals')
 def get_deals(current_user):
     """Get deals visible to current user with search, filter, sort, and pagination."""
     search = request.args.get('search')
-    company_id = request.args.get('company_id')
+    company_ids = request.args.getlist('company_id')
+    if len(company_ids) > 1:
+        company_id = company_ids
+    else:
+        company_id = request.args.get('company_id')
     stage = request.args.get('stage')
     owner_id = request.args.get('owner_id')
     view_mode = request.args.get('view_mode', 'all')
