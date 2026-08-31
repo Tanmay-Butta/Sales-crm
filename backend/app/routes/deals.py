@@ -15,10 +15,36 @@ deals_bp = Blueprint('deals', __name__, url_prefix='/api/deals')
 @deals_bp.route('', methods=['GET'])
 @auth_required
 def get_deals(current_user):
-    """Get all deals visible to current user."""
-    deals = deal_service.get_deals(current_user)
+    """Get deals visible to current user with search, filter, sort, and pagination."""
+    search = request.args.get('search')
+    company_id = request.args.get('company_id')
+    stage = request.args.get('stage')
+    owner_id = request.args.get('owner_id')
+    view_mode = request.args.get('view_mode', 'all')
+    sort_by = request.args.get('sort_by', 'updated_at')
+    sort_dir = request.args.get('sort_dir', 'desc')
+    page = request.args.get('page', 1)
+    per_page = request.args.get('per_page', 20)
+
+    result = deal_service.get_deals_paginated(
+        current_user=current_user,
+        search=search,
+        company_id=company_id,
+        stage=stage,
+        owner_id=owner_id,
+        view_mode=view_mode,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        per_page=per_page
+    )
+
     return jsonify({
-        'deals': [d.to_dict(include_company=True, include_owner=True, include_collaborators=True) for d in deals]
+        'deals': [d.to_dict(include_company=True, include_owner=True, include_collaborators=True) for d in result['deals']],
+        'total': result['total'],
+        'page': result['page'],
+        'per_page': result['per_page'],
+        'pages': result['pages']
     }), 200
 
 
