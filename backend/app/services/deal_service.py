@@ -2,6 +2,7 @@
 Deal service - Business logic for Deals, Collaborators, and Visibility.
 """
 
+import math
 from datetime import date, datetime, timezone
 
 def _parse_date(d):
@@ -14,7 +15,10 @@ from app.models.deal_collaborator import DealCollaborator
 from app.models.deal_history import DealHistory
 from app.models.company import Company
 from app.models.user import User
-from app.utils.constants import Roles, ErrorCodes, EventTypes, Stages, STAGE_TRANSITIONS
+from app.utils.constants import (
+    Roles, ErrorCodes, EventTypes, Stages, STAGE_TRANSITIONS,
+    ALLOWED_DEAL_SORT_FIELDS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+)
 from app.utils.exceptions import AuthorizationError, ValidationError, NotFoundError, InternalError
 from app.services import visibility_service
 
@@ -22,6 +26,139 @@ from app.services import visibility_service
 def get_deals(current_user):
     """Get all deals visible to the user globally (powers global search, listing, aggregates)."""
     return visibility_service.get_visible_deals_query(current_user).order_by(Deal.expected_close_date.desc()).all()
+
+
+def get_deals_paginated(
+    current_user,
+    search=None,
+    company_id=None,
+    stage=None,
+    owner_id=None,
+    view_mode='all',
+    sort_by='updated_at',
+    sort_dir='desc',
+    page=1,
+    per_page=DEFAULT_PAGE_SIZE
+):
+    """Get deals visible to the user with server-side search, filtering, sorting, and pagination.
+    
+    100% database-executed query.
+    Enforces visibility first so reps can never search or see unauthorized deals.
+    """
+    # 1. Base query from centralized visibility service
+    query = visibility_service.get_visible_deals_query(current_user)
+
+    # 2. View mode filtering (Server-side view tabs for Reps)
+    if current_user.role == Roles.SALES_REP and view_mode:
+        clean_view_mode = view_mode.lower().strip()
+        collaborating_deal_ids = db.session.query(DealCollaborator.deal_id).filter_by(user_id=current_user.id)
+        if clean_view_mode == 'my_deals':
+            query = query.filter(
+                db.or_(
+                    Deal.owner_id == current_user.id,
+                    Deal.id.in_(collaborating_deal_ids)
+                )
+            )
+        elif clean_view_mode == 'via_company':
+            owned_company_ids = db.session.query(Company.id).filter_by(owner_id=current_user.id)
+            query = query.filter(
+                Deal.company_id.in_(owned_company_ids),
+                Deal.owner_id != current_user.id,
+                ~Deal.id.in_(collaborating_deal_ids)
+            )
+
+    # 3. Company Filter (single ID or multiple IDs comma-separated / list)
+    if company_id:
+        try:
+            if isinstance(company_id, (list, tuple, set)):
+                cids = [int(x) for x in company_id if str(x).strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            elif isinstance(company_id, str) and ',' in company_id:
+                cids = [int(x.strip()) for x in company_id.split(',') if x.strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            else:
+                cid = int(company_id)
+                query = query.filter(Deal.company_id == cid)
+        except (ValueError, TypeError):
+            raise ValidationError("Invalid company_id filter", code=ErrorCodes.VALIDATION_ERROR)
+
+    # 4. Stage Filter
+    if stage:
+        clean_stage = stage.strip().upper()
+        if clean_stage not in Stages.ALL:
+            raise ValidationError(
+                f"Invalid stage filter: '{stage}'. Allowed stages are: {', '.join(Stages.ALL)}",
+                code=ErrorCodes.VALIDATION_ERROR
+            )
+        query = query.filter(Deal.stage == clean_stage)
+
+    # 5. Owner Filter
+    if owner_id:
+        try:
+            oid = int(owner_id)
+            query = query.filter(Deal.owner_id == oid)
+        except (ValueError, TypeError):
+            raise ValidationError("Invalid owner_id filter", code=ErrorCodes.VALIDATION_ERROR)
+
+    # 6. Text Search (Deal title & Company name - ANSI case-insensitive)
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        # Outer join Company to search by company name as well as deal title
+        query = query.outerjoin(Company, Deal.company_id == Company.id).filter(
+            db.or_(
+                db.func.lower(Deal.title).like(term),
+                db.func.lower(Company.name).like(term)
+            )
+        )
+
+    # 7. Sorting
+    clean_sort_by = (sort_by or 'updated_at').strip().lower()
+    if clean_sort_by not in ALLOWED_DEAL_SORT_FIELDS:
+        raise ValidationError(
+            f"Invalid sort field: '{sort_by}'. Allowed sort fields are: {', '.join(ALLOWED_DEAL_SORT_FIELDS)}",
+            code=ErrorCodes.VALIDATION_ERROR
+        )
+
+    clean_sort_dir = (sort_dir or 'desc').strip().lower()
+    if clean_sort_dir not in ['asc', 'desc']:
+        clean_sort_dir = 'desc'
+
+    sort_col = getattr(Deal, clean_sort_by)
+    order_expr = sort_col.asc() if clean_sort_dir == 'asc' else sort_col.desc()
+    # Secondary deterministic tie-breaker on Deal.id to keep pagination consistent across pages
+    query = query.order_by(order_expr, Deal.id.desc())
+
+    # 8. Pagination
+    try:
+        page = int(page) if page else 1
+        if page < 1:
+            page = 1
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        per_page = int(per_page) if per_page else DEFAULT_PAGE_SIZE
+        if per_page < 1:
+            per_page = DEFAULT_PAGE_SIZE
+        if per_page > MAX_PAGE_SIZE:
+            per_page = MAX_PAGE_SIZE
+    except (ValueError, TypeError):
+        per_page = DEFAULT_PAGE_SIZE
+
+    total = query.count()
+    pages = math.ceil(total / per_page) if total > 0 else 1
+    offset = (page - 1) * per_page
+    deals = query.offset(offset).limit(per_page).all()
+
+    return {
+        'deals': deals,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'pages': pages
+    }
 
 
 def get_my_deals(current_user):

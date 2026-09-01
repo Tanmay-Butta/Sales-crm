@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash,
-  ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock, MessageSquare, Sparkles, UserCheck, UserMinus
+  ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock, MessageSquare, Sparkles, UserCheck, UserMinus,
+  Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, SlidersHorizontal, ChevronDown, Check
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,12 +13,36 @@ import { authAPI } from "../api/auth";
 export default function DealsPage() {
   const { user, isManager } = useAuth();
   
+  // Deals list and metadata
   const [deals, setDeals] = useState([]);
+  const [totalDeals, setTotalDeals] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  // Dropdown reference data
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filterMode, setFilterMode] = useState("ALL"); // 'ALL' | 'MY_DEALS' | 'VIA_COMPANY'
-  
+
+  // Server-side Search & Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
+  const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
+  const [companyFilterSearch, setCompanyFilterSearch] = useState("");
+  const companyDropdownRef = useRef(null);
+
+  const [filterStage, setFilterStage] = useState("");
+  const [filterOwner, setFilterOwner] = useState("");
+  const [viewMode, setViewMode] = useState("ALL"); // 'ALL' | 'MY_DEALS' | 'VIA_COMPANY'
+
+  // Server-side Sorting state
+  const [sortBy, setSortBy] = useState("updated_at"); // 'updated_at' | 'value' | 'expected_close_date'
+  const [sortDir, setSortDir] = useState("desc"); // 'asc' | 'desc'
+
+  // Server-side Pagination state
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
@@ -49,27 +74,133 @@ export default function DealsPage() {
   const [noteText, setNoteText] = useState("");
   const [noteSubmitting, setNoteSubmitting] = useState(false);
 
+  // Close company dropdown when clicking outside
   useEffect(() => {
-    fetchData();
+    const handleClickOutside = (event) => {
+      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target)) {
+        setCompanyDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // 1. Debounce search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // 2. Fetch reference dropdown data on mount
+  useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        const [companiesRes, repsRes] = await Promise.all([
+          companiesAPI.getCompanies(),
+          authAPI.getReps()
+        ]);
+        setCompanies(companiesRes.data.companies.filter(c => !c.archived_at));
+        setReps(repsRes.data.users || []);
+      } catch (err) {
+        console.error("Failed to load reference data:", err);
+      }
+    };
+    fetchDropdownData();
   }, [isManager]);
 
-  const fetchData = async () => {
+  // 3. Reset page to 1 whenever search, filters, view mode, or sort change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, selectedCompanyIds, filterStage, filterOwner, viewMode, sortBy, sortDir]);
+
+  // 4. Fetch deals from server whenever query params change
+  const fetchDeals = useCallback(async () => {
     setLoading(true);
     try {
-      const [dealsRes, companiesRes, repsRes] = await Promise.all([
-        dealsAPI.getDeals(),
-        companiesAPI.getCompanies(),
-        authAPI.getReps()
-      ]);
-      
-      setDeals(dealsRes.data.deals);
-      setCompanies(companiesRes.data.companies.filter(c => !c.archived_at));
-      setReps(repsRes.data.users);
+      const params = {
+        page,
+        per_page: perPage,
+        sort_by: sortBy,
+        sort_dir: sortDir,
+      };
+
+      if (debouncedSearch.trim()) {
+        params.search = debouncedSearch.trim();
+      }
+      if (selectedCompanyIds.length > 0) {
+        params.company_id = selectedCompanyIds.join(',');
+      }
+      if (filterStage) {
+        params.stage = filterStage;
+      }
+      if (filterOwner) {
+        params.owner_id = filterOwner;
+      }
+      if (!isManager && viewMode !== "ALL") {
+        params.view_mode = viewMode.toLowerCase();
+      }
+
+      const res = await dealsAPI.getDeals(params);
+      console.log("[Deals API Response]", res.data);
+
+      setDeals(res.data.deals || []);
+      setTotalDeals(res.data.total || 0);
+      setTotalPages(res.data.pages || 1);
     } catch (err) {
-      toast.error("Failed to load deals data");
-      console.error(err);
+      console.error("Failed to fetch deals:", err);
+      toast.error("Failed to load deals from server");
     } finally {
       setLoading(false);
+    }
+  }, [page, perPage, debouncedSearch, selectedCompanyIds, filterStage, filterOwner, viewMode, sortBy, sortDir, isManager]);
+
+  useEffect(() => {
+    fetchDeals();
+  }, [fetchDeals]);
+
+  // Toggle company in multi-select
+  const toggleCompanySelection = (cid) => {
+    setSelectedCompanyIds(prev => {
+      if (prev.includes(cid)) {
+        return prev.filter(id => id !== cid);
+      } else {
+        return [...prev, cid];
+      }
+    });
+  };
+
+  // Clear all filters handler
+  const handleClearFilters = () => {
+    setSearchQuery("");
+    setDebouncedSearch("");
+    setSelectedCompanyIds([]);
+    setFilterStage("");
+    setFilterOwner("");
+    setViewMode("ALL");
+    setSortBy("updated_at");
+    setSortDir("desc");
+    setPage(1);
+  };
+
+  const isFiltered = Boolean(
+    searchQuery ||
+    selectedCompanyIds.length > 0 ||
+    filterStage ||
+    filterOwner ||
+    (!isManager && viewMode !== "ALL") ||
+    sortBy !== "updated_at" ||
+    sortDir !== "desc"
+  );
+
+  // Toggle sort direction or change sort column
+  const handleSortChange = (newSortBy) => {
+    if (sortBy === newSortBy) {
+      setSortDir(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(newSortBy);
+      setSortDir("desc");
     }
   };
 
@@ -145,7 +276,7 @@ export default function DealsPage() {
       }
       
       closeModal();
-      fetchData();
+      fetchDeals();
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to save deal";
       toast.error(message);
@@ -160,7 +291,7 @@ export default function DealsPage() {
     try {
       await dealsAPI.deleteDeal(id);
       toast.success("Deal deleted");
-      fetchData();
+      fetchDeals();
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to delete deal";
       toast.error(message);
@@ -185,7 +316,7 @@ export default function DealsPage() {
       
       const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
       setCollabModalDeal(updatedDealRes.data.deal);
-      fetchData();
+      fetchDeals();
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to add collaborator";
       toast.error(message);
@@ -204,7 +335,7 @@ export default function DealsPage() {
       
       const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
       setCollabModalDeal(updatedDealRes.data.deal);
-      fetchData();
+      fetchDeals();
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to remove collaborator";
       toast.error(message);
@@ -255,7 +386,7 @@ export default function DealsPage() {
     try {
       await dealsAPI.changeStage(deal.id, nextStage);
       toast.success(`Deal advanced to ${nextStage}`);
-      fetchData();
+      fetchDeals();
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to advance stage");
     }
@@ -281,7 +412,7 @@ export default function DealsPage() {
       await dealsAPI.changeStage(backwardModalDeal.id, backwardTargetStage, backwardReason.trim());
       toast.success(`Deal moved back to ${backwardTargetStage}`);
       setBackwardModalDeal(null);
-      fetchData();
+      fetchDeals();
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to move deal backward");
     } finally {
@@ -295,7 +426,7 @@ export default function DealsPage() {
     try {
       await dealsAPI.changeStage(deal.id, closeStage);
       toast.success(`Deal marked as ${closeStage}`);
-      fetchData();
+      fetchDeals();
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to close deal");
     }
@@ -308,7 +439,7 @@ export default function DealsPage() {
     try {
       await dealsAPI.reopenDeal(deal.id);
       toast.success(`Deal reopened to ${prev}`);
-      fetchData();
+      fetchDeals();
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to reopen deal");
     }
@@ -382,25 +513,49 @@ export default function DealsPage() {
     return <span className="badge badge-gray">Viewer</span>;
   };
 
-  const getFilteredDeals = () => {
-    if (isManager || filterMode === "ALL") return deals;
-    if (filterMode === "MY_DEALS") {
-      return deals.filter(d => d.owner_id === user?.id || d.collaborators?.some(c => c.id === user?.id));
-    }
-    if (filterMode === "VIA_COMPANY") {
-      return deals.filter(d => d.owner_id !== user?.id && !d.collaborators?.some(c => c.id === user?.id));
-    }
-    return deals;
+  // Helper to escape regex special characters
+  const escapeRegExp = (string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
-  const filteredDeals = getFilteredDeals();
+  // Helper to highlight matching substrings in deal title and company name
+  const highlightMatch = (text, query) => {
+    if (!text) return "";
+    if (!query || !query.trim()) return text;
+
+    const cleanQuery = query.trim();
+    const regex = new RegExp(`(${escapeRegExp(cleanQuery)})`, 'gi');
+    const parts = String(text).split(regex);
+
+    return parts.map((part, i) => {
+      if (part.toLowerCase() === cleanQuery.toLowerCase()) {
+        return (
+          <mark
+            key={i}
+            style={{
+              backgroundColor: 'rgba(99, 102, 241, 0.35)',
+              color: '#ffffff',
+              fontWeight: 700,
+              padding: '1px 4px',
+              borderRadius: '4px',
+              borderBottom: '2px solid var(--color-primary-light)',
+            }}
+          >
+            {part}
+          </mark>
+        );
+      }
+      return part;
+    });
+  };
 
   return (
     <div className="page-container">
+      {/* Page Header */}
       <div className="page-header">
         <div>
           <h2>All Deals</h2>
-          <p className="text-muted">Manage your sales pipeline across all visible companies</p>
+          <p className="text-muted">Manage and search your sales pipeline across all visible companies</p>
         </div>
         
         <div className="page-actions">
@@ -410,56 +565,409 @@ export default function DealsPage() {
         </div>
       </div>
 
-      {/* Filter Tabs for Sales Reps */}
+      {/* Server-side View Mode Tabs for Sales Reps */}
       {!isManager && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
           <button 
-            className={`btn btn-sm ${filterMode === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFilterMode('ALL')}
+            className={`btn btn-sm ${viewMode === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setViewMode('ALL')}
           >
-            All Visible Deals ({deals.length})
+            All Visible Deals
           </button>
           <button 
-            className={`btn btn-sm ${filterMode === 'MY_DEALS' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFilterMode('MY_DEALS')}
+            className={`btn btn-sm ${viewMode === 'MY_DEALS' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setViewMode('MY_DEALS')}
           >
-            My Deals & Collaborations ({deals.filter(d => d.owner_id === user?.id || d.collaborators?.some(c => c.id === user?.id)).length})
+            My Deals & Collaborations
           </button>
           <button 
-            className={`btn btn-sm ${filterMode === 'VIA_COMPANY' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFilterMode('VIA_COMPANY')}
+            className={`btn btn-sm ${viewMode === 'VIA_COMPANY' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setViewMode('VIA_COMPANY')}
           >
-            Via Company Ownership ({deals.filter(d => d.owner_id !== user?.id && !d.collaborators?.some(c => c.id === user?.id)).length})
+            Via Company Ownership
           </button>
         </div>
       )}
 
-      <div className="card table-container">
-        {loading ? (
-          <div className="p-8 text-center text-muted">Loading deals...</div>
-        ) : filteredDeals.length === 0 ? (
-          <div className="empty-state">
-            <Handshake size={48} className="text-muted mb-4" />
-            <h3>No deals found</h3>
-            <p className="text-muted">
-              {filterMode === 'MY_DEALS'
-                ? "You are not an owner or collaborator on any deals yet."
-                : filterMode === 'VIA_COMPANY'
-                ? "No deals belong to teammates under your owned companies."
-                : "Get started by creating a new deal in the pipeline."}
-            </p>
-            <button className="btn btn-primary mt-4" onClick={openNewModal}>
-              Create First Deal
+      {/* Server-side Search, Filter & Sort Controls Card */}
+      <div className="card" style={{ padding: '16px 20px', marginBottom: '20px', background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
+          
+          {/* Search Input */}
+          <div style={{ position: 'relative', flex: '1 1 260px', minWidth: '240px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '36px', paddingRight: searchQuery ? '32px' : '12px' }}
+              placeholder="Search deal title or company name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px'
+                }}
+                title="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Dropdowns */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+            
+            {/* Multi-Company Selector Dropdown */}
+            <div style={{ position: 'relative' }} ref={companyDropdownRef}>
+              <button
+                type="button"
+                className={`btn ${selectedCompanyIds.length > 0 ? 'btn-primary' : 'btn-secondary'}`}
+                style={{
+                  fontSize: '0.85rem',
+                  padding: '7px 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  minWidth: '155px',
+                  justifyContent: 'space-between'
+                }}
+                onClick={() => setCompanyDropdownOpen(prev => !prev)}
+                title="Select one or multiple companies"
+              >
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Building2 size={14} />
+                  <span>
+                    {selectedCompanyIds.length === 0
+                      ? "All Companies"
+                      : selectedCompanyIds.length === 1
+                      ? companies.find(c => c.id === selectedCompanyIds[0])?.name || "1 Company"
+                      : `${selectedCompanyIds.length} Companies`}
+                  </span>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                  {selectedCompanyIds.length > 1 && (
+                    <span style={{
+                      background: 'rgba(255, 255, 255, 0.25)',
+                      padding: '0 6px',
+                      borderRadius: '10px',
+                      fontSize: '0.725rem',
+                      fontWeight: 700
+                    }}>
+                      {selectedCompanyIds.length}
+                    </span>
+                  )}
+                  <ChevronDown
+                    size={14}
+                    style={{
+                      transform: companyDropdownOpen ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.15s ease'
+                    }}
+                  />
+                </div>
+              </button>
+
+              {/* Multi-Company Dropdown Popover */}
+              {companyDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  width: '280px',
+                  maxHeight: '340px',
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.55)',
+                  zIndex: 100,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}>
+                  {/* Search input inside dropdown */}
+                  <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)' }}>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={13} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                      <input
+                        type="text"
+                        className="form-input"
+                        style={{ paddingLeft: '28px', paddingRight: '8px', fontSize: '0.8rem', padding: '5px 8px 5px 28px', width: '100%' }}
+                        placeholder="Search companies..."
+                        value={companyFilterSearch}
+                        onChange={(e) => setCompanyFilterSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action row: Select All / Clear Selection */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 12px',
+                    borderBottom: '1px solid var(--color-border)',
+                    background: 'var(--color-bg-tertiary)',
+                    fontSize: '0.75rem'
+                  }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem', color: 'var(--color-primary-light)' }}
+                      onClick={() => setSelectedCompanyIds(companies.map(c => c.id))}
+                    >
+                      Select All ({companies.length})
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost text-muted"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                      onClick={() => setSelectedCompanyIds([])}
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  {/* Scrollable Company Checkbox List */}
+                  <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0', maxHeight: '200px' }}>
+                    {companies.filter(c => c.name.toLowerCase().includes(companyFilterSearch.toLowerCase().trim())).length === 0 ? (
+                      <div className="text-muted text-xs text-center" style={{ padding: '16px 10px' }}>
+                        No matching companies found
+                      </div>
+                    ) : (
+                      companies
+                        .filter(c => c.name.toLowerCase().includes(companyFilterSearch.toLowerCase().trim()))
+                        .map(comp => {
+                          const isSelected = selectedCompanyIds.includes(comp.id);
+                          return (
+                            <div
+                              key={comp.id}
+                              onClick={() => toggleCompanySelection(comp.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                fontSize: '0.825rem',
+                                color: isSelected ? '#ffffff' : 'var(--color-text-secondary)',
+                                background: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                                borderLeft: isSelected ? '3px solid var(--color-primary)' : '3px solid transparent',
+                                transition: 'all 0.1s ease'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}} // Handled by parent container click
+                                style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                              />
+                              <span style={{
+                                fontWeight: isSelected ? 600 : 400,
+                                flex: 1,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {comp.name}
+                              </span>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Stage Filter */}
+            <select
+              className="form-select"
+              style={{ width: 'auto', minWidth: '140px', fontSize: '0.85rem' }}
+              value={filterStage}
+              onChange={(e) => setFilterStage(e.target.value)}
+            >
+              <option value="">All Stages</option>
+              <option value="NEW">New (10%)</option>
+              <option value="QUALIFIED">Qualified (25%)</option>
+              <option value="PROPOSAL">Proposal (50%)</option>
+              <option value="NEGOTIATION">Negotiation (75%)</option>
+              <option value="WON">Won (100%)</option>
+              <option value="LOST">Lost (0%)</option>
+            </select>
+
+            {/* Owner Filter */}
+            <select
+              className="form-select"
+              style={{ width: 'auto', minWidth: '140px', fontSize: '0.85rem' }}
+              value={filterOwner}
+              onChange={(e) => setFilterOwner(e.target.value)}
+            >
+              <option value="">All Owners</option>
+              {reps.map(r => (
+                <option key={r.id} value={r.id}>{r.full_name}</option>
+              ))}
+            </select>
+
+            {/* Sort Field & Direction */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <select
+                className="form-select"
+                style={{ width: 'auto', minWidth: '150px', fontSize: '0.85rem' }}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                title="Sort by"
+              >
+                <option value="updated_at">Last Updated</option>
+                <option value="value">Deal Value</option>
+                <option value="expected_close_date">Close Date</option>
+              </select>
+
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '8px 10px' }}
+                onClick={() => setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
+                title={`Sorting ${sortDir.toUpperCase()} (Click to toggle)`}
+              >
+                {sortDir === 'asc' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+              </button>
+            </div>
+
+            {/* Clear All Filters */}
+            {isFiltered && (
+              <button
+                className="btn btn-ghost text-muted"
+                style={{ fontSize: '0.85rem', padding: '6px 10px' }}
+                onClick={handleClearFilters}
+                title="Reset all filters and sorting"
+              >
+                <RotateCcw size={14} /> Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Selected Companies Multi-Pill Chips */}
+        {selectedCompanyIds.length > 0 && (
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            marginTop: '14px',
+            paddingTop: '12px',
+            borderTop: '1px dashed var(--color-border)',
+            alignItems: 'center'
+          }}>
+            <span className="text-xs text-muted" style={{ marginRight: '4px', fontWeight: 500 }}>
+              Filtered by ({selectedCompanyIds.length}):
+            </span>
+            {selectedCompanyIds.map(cid => {
+              const comp = companies.find(c => c.id === cid);
+              if (!comp) return null;
+              return (
+                <span
+                  key={cid}
+                  className="badge badge-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '3px 8px',
+                    fontSize: '0.75rem',
+                    borderRadius: '6px',
+                    background: 'rgba(99, 102, 241, 0.18)',
+                    border: '1px solid rgba(99, 102, 241, 0.4)',
+                    color: '#e0e7ff'
+                  }}
+                >
+                  <Building2 size={11} />
+                  {comp.name}
+                  <X
+                    size={13}
+                    style={{ cursor: 'pointer', marginLeft: '3px', opacity: 0.7 }}
+                    onMouseEnter={(e) => e.target.style.opacity = 1}
+                    onMouseLeave={(e) => e.target.style.opacity = 0.7}
+                    onClick={() => toggleCompanySelection(cid)}
+                    title={`Remove ${comp.name} filter`}
+                  />
+                </span>
+              );
+            })}
+            <button
+              type="button"
+              className="btn btn-ghost text-muted"
+              style={{ fontSize: '0.725rem', padding: '2px 8px', marginLeft: '4px' }}
+              onClick={() => setSelectedCompanyIds([])}
+            >
+              Clear companies
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* Table Container */}
+      <div className="card table-container" style={{ padding: 0 }}>
+        {loading ? (
+          <div className="p-8 text-center text-muted" style={{ padding: '60px 20px' }}>
+            <div style={{ display: 'inline-block', width: '28px', height: '28px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
+            <p>Fetching deals from server...</p>
+          </div>
+        ) : deals.length === 0 ? (
+          <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
+            <Handshake size={48} className="text-muted mb-4" style={{ margin: '0 auto 16px', opacity: 0.6 }} />
+            <h3>No deals found</h3>
+            <p className="text-muted" style={{ maxWidth: '420px', margin: '8px auto 20px' }}>
+              {isFiltered
+                ? "No deals matched your search and filter criteria. Try adjusting or clearing your filters."
+                : viewMode === 'MY_DEALS'
+                ? "You are not an owner or collaborator on any deals yet."
+                : viewMode === 'VIA_COMPANY'
+                ? "No deals belong to teammates under your owned companies."
+                : "Get started by creating your first deal in the pipeline."}
+            </p>
+            {isFiltered ? (
+              <button className="btn btn-secondary" onClick={handleClearFilters}>
+                <RotateCcw size={14} /> Clear All Filters
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={openNewModal}>
+                <Plus size={16} /> Create First Deal
+              </button>
+            )}
           </div>
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th>TITLE</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortChange('title')}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    TITLE
+                  </div>
+                </th>
                 <th>COMPANY</th>
-                <th>VALUE</th>
-                <th>CLOSE DATE</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortChange('value')}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    VALUE
+                    {sortBy === 'value' && (sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                  </div>
+                </th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortChange('expected_close_date')}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    CLOSE DATE
+                    {sortBy === 'expected_close_date' && (sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                  </div>
+                </th>
                 <th>STAGE</th>
                 <th>DEAL OWNER</th>
                 <th>YOUR ACCESS</th>
@@ -467,21 +975,20 @@ export default function DealsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredDeals.map(deal => {
+              {deals.map(deal => {
                 const isOwner = deal.owner_id === user.id;
                 const isCollab = deal.collaborators?.some(c => c.id === user.id);
-                const isCompanyOwner = deal.company && deal.company.owner_id === user.id;
                 const canEdit = isManager || isOwner || isCollab;
                 const canManageCollabs = isManager || isOwner;
                 const canDelete = isManager || isOwner;
                 
                 return (
                   <tr key={deal.id}>
-                    <td className="font-medium text-white">{deal.title}</td>
+                    <td className="font-medium text-white">{highlightMatch(deal.title, debouncedSearch)}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         <Building2 size={14} className="text-muted" />
-                        {deal.company?.name || "Unknown"}
+                        {highlightMatch(deal.company?.name || "Unknown", debouncedSearch)}
                       </div>
                     </td>
                     <td className="font-medium">
@@ -678,6 +1185,78 @@ export default function DealsPage() {
               })}
             </tbody>
           </table>
+        )}
+
+        {/* Server-Side Pagination Footer */}
+        {deals.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 20px',
+            borderTop: '1px solid var(--color-border)',
+            background: 'var(--color-bg-secondary)',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            {/* Range and Total Matches */}
+            <div className="text-sm text-muted">
+              {totalDeals === 1 ? (
+                <>Showing <strong style={{ color: 'var(--color-text)' }}>1</strong> of <strong style={{ color: 'var(--color-text)' }}>1</strong> deal</>
+              ) : (
+                <>Showing <strong style={{ color: 'var(--color-text)' }}>{(page - 1) * perPage + 1}</strong> to <strong style={{ color: 'var(--color-text)' }}>{Math.min(page * perPage, totalDeals)}</strong> of <strong style={{ color: 'var(--color-text)' }}>{totalDeals}</strong> deals</>
+              )}
+            </div>
+
+            {/* Pagination Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              
+              {/* Per-Page Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '12px' }}>
+                <span className="text-xs text-muted">Per page:</span>
+                <select
+                  className="form-select"
+                  style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8rem' }}
+                  value={perPage}
+                  onChange={(e) => {
+                    setPerPage(parseInt(e.target.value, 10));
+                    setPage(1);
+                  }}
+                >
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </div>
+
+              {/* Prev Page Button */}
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+                style={{ padding: '6px 10px' }}
+                title="Previous page"
+              >
+                <ChevronLeft size={16} /> Prev
+              </button>
+
+              {/* Page Number Indicator */}
+              <span className="text-sm" style={{ padding: '0 8px', fontWeight: 500, color: 'var(--color-text)' }}>
+                Page {page} of {totalPages}
+              </span>
+
+              {/* Next Page Button */}
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
+                style={{ padding: '6px 10px' }}
+                title="Next page"
+              >
+                Next <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

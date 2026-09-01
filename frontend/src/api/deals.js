@@ -1,9 +1,9 @@
 import client from './client';
 
 export const dealsAPI = {
-  // Get all deals visible to current user
-  getDeals: () => {
-    return client.get('/deals');
+  // Get deals visible to current user (supports server-side search, filtering, sorting, and pagination)
+  getDeals: (params = {}) => {
+    return client.get('/deals', { params });
   },
 
   // Get deals where user is owner or collaborator (Spec §5 My Deals)
