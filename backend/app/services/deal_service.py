@@ -993,21 +993,84 @@ def bulk_reassign_deals(current_user, deal_ids, owner_id, keep_previous_owner_as
     }
 
 
-def export_pipeline_csv(current_user):
+def export_pipeline_csv(current_user, search=None, company_id=None, stage=None, owner_id=None, view_mode='all'):
     """
     Export the sales pipeline as a CSV file (§7).
     Scope: Every OPEN deal visible to the viewer (strictly excludes WON/LOST deals).
+    Supports optional search, company, stage, owner, and view_mode filters.
     Columns: Company, Deal Title, Stage, Value, Weighted Value.
     Calculations: Uses standard fixed stage win probabilities from WIN_PROBABILITIES.
     """
     # 1. Base query from visibility service (strictly enforces role permissions)
     query = visibility_service.get_visible_deals_query(current_user)
 
-    # 2. Filter strictly to OPEN deals (not WON, not LOST, not deleted)
+    # 2. View Mode handling for Sales Reps
+    if current_user.role == Roles.SALES_REP and view_mode:
+        clean_view_mode = view_mode.strip().lower()
+        collaborating_deal_ids = db.session.query(DealCollaborator.deal_id).filter_by(user_id=current_user.id)
+
+        if clean_view_mode == 'my_deals':
+            query = query.filter(
+                db.or_(
+                    Deal.owner_id == current_user.id,
+                    Deal.id.in_(collaborating_deal_ids)
+                )
+            )
+        elif clean_view_mode == 'via_company':
+            owned_company_ids = db.session.query(Company.id).filter_by(owner_id=current_user.id)
+            query = query.filter(
+                Deal.company_id.in_(owned_company_ids),
+                Deal.owner_id != current_user.id,
+                ~Deal.id.in_(collaborating_deal_ids)
+            )
+
+    # 3. Company Filter (single ID or multiple IDs comma-separated / list)
+    if company_id:
+        try:
+            if isinstance(company_id, (list, tuple, set)):
+                cids = [int(x) for x in company_id if str(x).strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            elif isinstance(company_id, str) and ',' in company_id:
+                cids = [int(x.strip()) for x in company_id.split(',') if x.strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            else:
+                cid = int(company_id)
+                query = query.filter(Deal.company_id == cid)
+        except (ValueError, TypeError):
+            pass
+
+    # 4. Stage Filter (must still be an open stage to be included in pipeline export)
+    if stage:
+        clean_stage = stage.strip().upper()
+        if clean_stage in Stages.ALL:
+            query = query.filter(Deal.stage == clean_stage)
+
+    # 5. Owner Filter
+    if owner_id:
+        try:
+            oid = int(owner_id)
+            query = query.filter(Deal.owner_id == oid)
+        except (ValueError, TypeError):
+            pass
+
+    # 6. Search across Deal Title and Company Name
+    query = query.outerjoin(Company, Deal.company_id == Company.id)
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        query = query.filter(
+            db.or_(
+                db.func.lower(Deal.title).like(term),
+                db.func.lower(Company.name).like(term)
+            )
+        )
+
+    # 7. Filter strictly to OPEN deals (not WON, not LOST, not deleted)
     query = query.filter(
         Deal.deleted_at == None,
         Deal.stage.in_(Stages.OPEN_ORDERED)
-    ).join(Company, Deal.company_id == Company.id).order_by(Company.name.asc(), Deal.title.asc())
+    ).order_by(Company.name.asc(), Deal.title.asc())
 
     open_deals = query.all()
 

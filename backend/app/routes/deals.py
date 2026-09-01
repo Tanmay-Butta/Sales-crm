@@ -221,6 +221,24 @@ def bulk_reassign(current_user):
 @deals_bp.route('/export-csv', methods=['GET'])
 @auth_required
 def export_csv(current_user):
-    """Export all open deals visible to the user as a pipeline CSV file (§7)."""
-    return deal_service.export_pipeline_csv(current_user)
+    """Export open deals visible to the user as a pipeline CSV file (§7). Supports optional filters/search."""
+    search = request.args.get('search')
+    company_ids = request.args.getlist('company_id')
+    if len(company_ids) > 1:
+        company_id = company_ids
+    else:
+        company_id = request.args.get('company_id')
+    stage = request.args.get('stage')
+    owner_id = request.args.get('owner_id')
+    view_mode = request.args.get('view_mode', 'all')
+
+    return deal_service.export_pipeline_csv(
+        current_user=current_user,
+        search=search,
+        company_id=company_id,
+        stage=stage,
+        owner_id=owner_id,
+        view_mode=view_mode
+    )
+
 
