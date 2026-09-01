@@ -84,6 +84,26 @@ I left search, bulk actions, dashboard and alerts until later because they depen
 
 The main thing I learned here was that the "small" features were not always actually small. The CRUD itself was usually quick. The time went into deciding what should be allowed, what should happen when something goes wrong, and then checking that the backend really enforced it.
 
+- **Goal 6 — Search, filter and pagination**
+  - Estimated: **1.5h**
+  - Actual: **1.5h**
+  - What happened: The search and filters themselves were not too bad. I built server-side search across deal title and company name, added filters for stage, owner, and company, and wired up pagination. The part that took extra time was making sure the filters work together properly — like if you search "cloud" and also filter by stage "PROPOSAL", both should apply at the same time. Also had to handle multi-company filtering because the spec allows filtering by multiple companies at once. I tested it with Postman too, not just the UI, because I wanted to make sure the query parameters actually worked correctly on the backend.
+
+- **Goal 7 — Bulk actions and CSV export**
+  - Estimated: **2h**
+  - Actual: **2.5h**
+  - What happened: This one took way longer than I expected. The bulk advance looked simple on paper — select some deals, click advance, done. But then I realised what happens when your selected deals include some in Negotiation. You can't just blindly advance those because Negotiation is the last stage before closing. So I had to build an interactive modal that checks if any selected deals are in Negotiation and asks the user what to do — keep them as is, mark as won, or mark as lost. Then bulk reassign had its own set of problems. The backend had to reject managers as deal owners (a manager can reassign deals but cannot be the owner themselves). I also added a "keep previous owner as collaborator" option because when you reassign a deal, the old rep usually still needs access. CSV export was the easiest part — it just uses the same filters and search that are already active on the page. One bug I caught was that selection state was not resetting when filters changed. So you'd select 5 deals, change a filter, and the UI still showed "5 selected" even though those deals were no longer visible. Fixed that with a useEffect that clears selection on any filter/search/page change.
+
+- **Goal 9 — Deal history and timeline**
+  - Estimated: **1h**
+  - Actual: **1.5h**
+  - What happened: Most of the groundwork was already done from earlier sessions. The `deal_history` table was already immutable and append-only, and every stage change, owner change, collaborator add/remove, and note was already being logged. What I mainly did here was build the timeline UI on the deal detail page and make sure timestamps display correctly in IST. The history entries were already being created by the service layer, so this was more of a frontend task. Tested it by doing a bunch of actions on a deal and checking the timeline showed everything in order.
+
+- **Total for Goals 6, 7, 9**
+  - Estimated: **4.5h**
+  - Actual: **5.5h**
+  - What happened: Bulk actions took a bit more than expected because of the negotiation modal edge case. The rest went pretty smoothly.
+
 ---
 
 ## Questions I ran into while building

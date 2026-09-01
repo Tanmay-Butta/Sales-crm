@@ -57,8 +57,24 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Strictly locking down deal creation so that *only* the specific owner of a company can create new deals under it.
 - **Why:** The `README.md` states "Sales reps create companies and deals" without explicitly restricting deal creation to the company's owner. In real-world enterprise CRMs (like Salesforce or HubSpot), an Account-Based Selling model is standard: a senior Account Executive owns the Company, but specialists or junior reps can uncover new opportunities, create new deals, and own those deals under the overarching account. The Company Owner benefits by retaining automatic visibility over all activity in their account. Locking this down would artificially force reps to create duplicate companies (e.g. "Beta LLC") just to log their deals, ruining reporting accuracy.
 
+## Decision 11: Bulk Advance Stage Progression & Negotiation Outcome Resolution via Interactive Modal
+- **Chose:** Designing `POST /api/deals/bulk-advance` with sequential forward advancement (`NEW` → `QUALIFIED` → `PROPOSAL` → `NEGOTIATION`) while handling `NEGOTIATION` deals through an interactive confirmation dialog with three explicit options:
+  1. `Keep in Negotiation (Do not close) [Default]`: Advances early stage deals sequentially while preserving negotiation deals in their active state.
+  2. `Mark as WON`: Closes `NEGOTIATION` deals as `WON`, setting `previous_stage='NEGOTIATION'`, recording `closed_at`, and logging a `DEAL_CLOSED` audit record.
+  3. `Mark as LOST`: Closes `NEGOTIATION` deals as `LOST`, setting `previous_stage='NEGOTIATION'`, recording `closed_at`, and logging a `DEAL_CLOSED` audit record.
+- **Rejected:** 
+  - Arbitrarily forcing or guessing whether `NEGOTIATION` deals should be marked `WON` or `LOST` automatically.
+  - Hard-failing the entire batch for negotiation deals if a selected deal is at `NEGOTIATION` useful in real life ig.
+- **Why:** In our governed lifecycle state machine, `NEGOTIATION` is the critical bifurcation point where deals transition to terminal closed states (`WON` or `LOST`). Because closing a deal directly impacts quota, weighted pipeline forecasts, and revenue metrics, automatically defaulting deals to `WON` or `LOST` without user intent would risk severe reporting errors. Providing an explicit modal with a default of "Keep in Negotiation" allows managers to safely mass-advance mixed pipelines while deciding whether to close mature opportunities. Each deal is processed and committed atomically to satisfy the core requirement that bulk operations are never all-or-nothing.
+
+## Decision 12: Bulk Reassignment Owner Role Enforcement & Collaborator Retention
+- **Chose:** Enforcing server-side validation that bulk reassignments must target a valid `SALES_REP` (rejecting Sales Managers with a clear error: *"Deal owner must be a Sales Rep. Sales Managers cannot be deal owners"*), while providing an interactive checkbox in the modal: *"Keep previous owner(s) as collaborator(s)"* (defaulting to `true`).
+- **Rejected:** Allowing deals to be assigned to Sales Managers, or silently stripping the previous rep's access when a deal is reassigned.
+- **Why:** Sales Managers oversee the entire pipeline and do not carry individual deal quotas; assigning deals directly to managers distorts team ownership boundaries. Furthermore, when a manager reassigns deals between reps (e.g., rebalancing territory or transitioning enterprise accounts), the originating rep often needs to continue providing context and assisting on the opportunity. Retaining the former owner as a collaborator ensures zero disruption to deal momentum while logging `OWNER_CHANGED` and `COLLABORATOR_ADDED` events in the deal's immutable audit history.
+
 ---
 
 ### Assumptions & Business Rules
 - **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is rejected server-side to prevent accumulating new pipeline on dead accounts.
 - **Company Ownership Rule**: Company owners must always be Sales Reps, never Sales Managers (Managers oversee the whole pipeline but don't hold individual quota).
+

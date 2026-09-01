@@ -2,8 +2,11 @@
 Deal service - Business logic for Deals, Collaborators, and Visibility.
 """
 
+import csv
+import io
 import math
 from datetime import date, datetime, timezone
+from flask import Response
 
 def _parse_date(d):
     if isinstance(d, str):
@@ -17,7 +20,8 @@ from app.models.company import Company
 from app.models.user import User
 from app.utils.constants import (
     Roles, ErrorCodes, EventTypes, Stages, STAGE_TRANSITIONS,
-    ALLOWED_DEAL_SORT_FIELDS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+    ALLOWED_DEAL_SORT_FIELDS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE,
+    WIN_PROBABILITIES
 )
 from app.utils.exceptions import AuthorizationError, ValidationError, NotFoundError, InternalError
 from app.services import visibility_service
@@ -206,7 +210,7 @@ def _validate_owner(owner_id):
     if not owner:
         raise ValidationError("Provided owner does not exist", code=ErrorCodes.USER_NOT_FOUND)
     if owner.role != Roles.SALES_REP:
-        raise ValidationError("Deal owner must be a Sales Rep, never a Manager", code=ErrorCodes.VALIDATION_ERROR)
+        raise ValidationError("Deal owner must be a Sales Rep. Sales Managers cannot be deal owners.", code=ErrorCodes.VALIDATION_ERROR)
     return owner
 
 
@@ -643,3 +647,464 @@ def add_note(current_user, deal_id, note_text):
     db.session.add(history_entry)
     db.session.commit()
     return history_entry
+
+
+# --- Goal 7: Bulk Deal Actions & Pipeline CSV Export ---
+
+def bulk_advance_deals(current_user, deal_ids, negotiation_outcome=None):
+    """
+    Bulk advance selected deals to their next sequential stage.
+    Only Sales Managers can perform bulk operations (§7).
+    Each deal is processed individually and atomically so partial successes are preserved.
+
+    Args:
+        current_user: The authenticated user (must be SALES_MANAGER).
+        deal_ids (list): List of deal IDs to advance.
+        negotiation_outcome (str, optional): 'WON', 'LOST', or None.
+            If 'WON' / 'LOST', deals at NEGOTIATION will be closed accordingly.
+            If None, deals at NEGOTIATION will be skipped with an explanatory rejection message.
+
+    Returns:
+        dict: { total_requested, total_succeeded, total_failed, results }
+    """
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only Sales Managers can perform bulk deal actions", code=ErrorCodes.MANAGER_REQUIRED)
+
+    if not isinstance(deal_ids, list) or not deal_ids:
+        raise ValidationError("deal_ids must be a non-empty list of integers", code=ErrorCodes.VALIDATION_ERROR)
+
+    clean_outcome = None
+    if negotiation_outcome:
+        clean_outcome = str(negotiation_outcome).strip().upper()
+        if clean_outcome not in [Stages.WON, Stages.LOST]:
+            raise ValidationError(
+                f"Invalid negotiation_outcome: '{negotiation_outcome}'. Must be 'WON', 'LOST', or omitted.",
+                code=ErrorCodes.VALIDATION_ERROR
+            )
+
+    results = []
+    total_succeeded = 0
+    total_failed = 0
+
+    for raw_id in deal_ids:
+        deal_title = "Unknown"
+        try:
+            try:
+                deal_id = int(raw_id)
+            except (ValueError, TypeError):
+                results.append({
+                    "deal_id": raw_id,
+                    "deal_title": "Unknown",
+                    "success": False,
+                    "reason": "Invalid deal ID format"
+                })
+                total_failed += 1
+                continue
+
+            deal = Deal.query.filter_by(id=deal_id, deleted_at=None).first()
+            if not deal:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": "Unknown",
+                    "success": False,
+                    "reason": "Deal not found or deleted"
+                })
+                total_failed += 1
+                continue
+
+            deal_title = deal.title
+
+            if deal.is_closed:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": deal_title,
+                    "success": False,
+                    "reason": f"Deal is already closed ({deal.stage}) and cannot advance"
+                })
+                total_failed += 1
+                continue
+
+            old_stage = deal.stage
+
+            # Handle Negotiation stage
+            if old_stage == Stages.NEGOTIATION:
+                if clean_outcome == Stages.WON:
+                    deal.previous_stage = old_stage
+                    deal.stage = Stages.WON
+                    deal.closed_at = datetime.now(timezone.utc)
+                    deal.updated_at = datetime.now(timezone.utc)
+
+                    history_entry = DealHistory(
+                        deal_id=deal.id,
+                        event_type=EventTypes.DEAL_CLOSED,
+                        old_value={'stage': old_stage},
+                        new_value={'stage': Stages.WON},
+                        actor_id=current_user.id,
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    db.session.add(history_entry)
+                    db.session.commit()
+
+                    results.append({
+                        "deal_id": deal_id,
+                        "deal_title": deal_title,
+                        "success": True,
+                        "old_stage": old_stage,
+                        "new_stage": Stages.WON,
+                        "message": "Closed as WON from Negotiation"
+                    })
+                    total_succeeded += 1
+                    continue
+
+                elif clean_outcome == Stages.LOST:
+                    deal.previous_stage = old_stage
+                    deal.stage = Stages.LOST
+                    deal.closed_at = datetime.now(timezone.utc)
+                    deal.updated_at = datetime.now(timezone.utc)
+
+                    history_entry = DealHistory(
+                        deal_id=deal.id,
+                        event_type=EventTypes.DEAL_CLOSED,
+                        old_value={'stage': old_stage},
+                        new_value={'stage': Stages.LOST},
+                        actor_id=current_user.id,
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    db.session.add(history_entry)
+                    db.session.commit()
+
+                    results.append({
+                        "deal_id": deal_id,
+                        "deal_title": deal_title,
+                        "success": True,
+                        "old_stage": old_stage,
+                        "new_stage": Stages.LOST,
+                        "message": "Closed as LOST from Negotiation"
+                    })
+                    total_succeeded += 1
+                    continue
+
+                else:
+                    results.append({
+                        "deal_id": deal_id,
+                        "deal_title": deal_title,
+                        "success": False,
+                        "reason": "Deal is at Negotiation stage. Closing as Won or Lost requires explicit outcome selection"
+                    })
+                    total_failed += 1
+                    continue
+
+            # Standard open stages: NEW -> QUALIFIED -> PROPOSAL -> NEGOTIATION
+            transitions = STAGE_TRANSITIONS.get(deal.stage, {'forward': []})
+            forward_stages = transitions.get('forward', [])
+            if not forward_stages:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": deal_title,
+                    "success": False,
+                    "reason": f"No forward stage exists from '{deal.stage}'"
+                })
+                total_failed += 1
+                continue
+
+            next_stage = forward_stages[0]
+
+            deal.stage = next_stage
+            deal.updated_at = datetime.now(timezone.utc)
+            history_entry = DealHistory(
+                deal_id=deal.id,
+                event_type=EventTypes.STAGE_CHANGED,
+                old_value={'stage': old_stage},
+                new_value={'stage': next_stage},
+                actor_id=current_user.id,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.session.add(history_entry)
+            db.session.commit()
+
+            results.append({
+                "deal_id": deal_id,
+                "deal_title": deal_title,
+                "success": True,
+                "old_stage": old_stage,
+                "new_stage": next_stage,
+                "message": f"Advanced from {old_stage} to {next_stage}"
+            })
+            total_succeeded += 1
+
+        except Exception as e:
+            db.session.rollback()
+            results.append({
+                "deal_id": raw_id,
+                "deal_title": deal_title,
+                "success": False,
+                "reason": str(e)
+            })
+            total_failed += 1
+
+    return {
+        "total_requested": len(deal_ids),
+        "total_succeeded": total_succeeded,
+        "total_failed": total_failed,
+        "results": results
+    }
+
+
+def bulk_reassign_deals(current_user, deal_ids, owner_id, keep_previous_owner_as_collaborator=True):
+    """
+    Bulk reassign selected deals to a new Sales Rep owner.
+    Only Sales Managers can perform bulk operations (§7).
+    Validates new owner exists and is a Sales Rep (Managers cannot own deals).
+    Each deal is processed individually and atomically.
+
+    Args:
+        current_user: Authenticated user (must be SALES_MANAGER).
+        deal_ids (list): List of deal IDs to reassign.
+        owner_id (int): Target Sales Rep ID.
+        keep_previous_owner_as_collaborator (bool): Whether previous rep owner is retained as collaborator.
+
+    Returns:
+        dict: { total_requested, total_succeeded, total_failed, results }
+    """
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only Sales Managers can perform bulk deal actions", code=ErrorCodes.MANAGER_REQUIRED)
+
+    if not isinstance(deal_ids, list) or not deal_ids:
+        raise ValidationError("deal_ids must be a non-empty list of integers", code=ErrorCodes.VALIDATION_ERROR)
+
+    new_owner = _validate_owner(owner_id)
+
+    results = []
+    total_succeeded = 0
+    total_failed = 0
+
+    for raw_id in deal_ids:
+        deal_title = "Unknown"
+        try:
+            try:
+                deal_id = int(raw_id)
+            except (ValueError, TypeError):
+                results.append({
+                    "deal_id": raw_id,
+                    "deal_title": "Unknown",
+                    "success": False,
+                    "reason": "Invalid deal ID format"
+                })
+                total_failed += 1
+                continue
+
+            deal = Deal.query.filter_by(id=deal_id, deleted_at=None).first()
+            if not deal:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": "Unknown",
+                    "success": False,
+                    "reason": "Deal not found or deleted"
+                })
+                total_failed += 1
+                continue
+
+            deal_title = deal.title
+
+            if deal.owner_id == new_owner.id:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": deal_title,
+                    "success": False,
+                    "reason": f"Deal is already owned by {new_owner.full_name}"
+                })
+                total_failed += 1
+                continue
+
+            old_owner = User.query.get(deal.owner_id)
+
+            # If new owner was previously a collaborator on this deal, remove old collaboration record
+            existing_collab = DealCollaborator.query.filter_by(deal_id=deal.id, user_id=new_owner.id).first()
+            if existing_collab:
+                db.session.delete(existing_collab)
+
+            # Record immutable audit history entry for OWNER_CHANGED
+            history_entry = DealHistory(
+                deal_id=deal.id,
+                event_type=EventTypes.OWNER_CHANGED,
+                old_value={'owner_id': deal.owner_id, 'owner_name': old_owner.full_name if old_owner else None},
+                new_value={'owner_id': new_owner.id, 'owner_name': new_owner.full_name},
+                actor_id=current_user.id,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.session.add(history_entry)
+
+            # Optional keep previous owner as collaborator
+            collab_msg = ""
+            if keep_previous_owner_as_collaborator and old_owner and old_owner.role == Roles.SALES_REP:
+                collab_check = DealCollaborator.query.filter_by(deal_id=deal.id, user_id=old_owner.id).first()
+                if not collab_check:
+                    new_collab = DealCollaborator(
+                        deal_id=deal.id,
+                        user_id=old_owner.id,
+                        added_by=current_user.id,
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    db.session.add(new_collab)
+
+                    collab_history = DealHistory(
+                        deal_id=deal.id,
+                        event_type=EventTypes.COLLABORATOR_ADDED,
+                        old_value=None,
+                        new_value={
+                            'user_id': old_owner.id,
+                            'user_name': old_owner.full_name,
+                            'email': old_owner.email,
+                            'note': 'Retained as collaborator upon bulk owner reassignment'
+                        },
+                        actor_id=current_user.id,
+                        created_at=datetime.now(timezone.utc)
+                    )
+                    db.session.add(collab_history)
+                    collab_msg = f" ({old_owner.full_name} retained as collaborator)"
+
+            deal.owner_id = new_owner.id
+            deal.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+
+            results.append({
+                "deal_id": deal_id,
+                "deal_title": deal_title,
+                "success": True,
+                "message": f"Reassigned to {new_owner.full_name}{collab_msg}"
+            })
+            total_succeeded += 1
+
+        except Exception as e:
+            db.session.rollback()
+            results.append({
+                "deal_id": raw_id,
+                "deal_title": deal_title,
+                "success": False,
+                "reason": str(e)
+            })
+            total_failed += 1
+
+    return {
+        "total_requested": len(deal_ids),
+        "total_succeeded": total_succeeded,
+        "total_failed": total_failed,
+        "results": results
+    }
+
+
+def export_pipeline_csv(current_user, search=None, company_id=None, stage=None, owner_id=None, view_mode='all'):
+    """
+    Export the sales pipeline as a CSV file (§7).
+    Scope: Every OPEN deal visible to the viewer (strictly excludes WON/LOST deals).
+    Supports optional search, company, stage, owner, and view_mode filters.
+    Columns: Company, Deal Title, Stage, Value, Weighted Value.
+    Calculations: Uses standard fixed stage win probabilities from WIN_PROBABILITIES.
+    """
+    # 1. Base query from visibility service (strictly enforces role permissions)
+    query = visibility_service.get_visible_deals_query(current_user)
+
+    # 2. View Mode handling for Sales Reps
+    if current_user.role == Roles.SALES_REP and view_mode:
+        clean_view_mode = view_mode.strip().lower()
+        collaborating_deal_ids = db.session.query(DealCollaborator.deal_id).filter_by(user_id=current_user.id)
+
+        if clean_view_mode == 'my_deals':
+            query = query.filter(
+                db.or_(
+                    Deal.owner_id == current_user.id,
+                    Deal.id.in_(collaborating_deal_ids)
+                )
+            )
+        elif clean_view_mode == 'via_company':
+            owned_company_ids = db.session.query(Company.id).filter_by(owner_id=current_user.id)
+            query = query.filter(
+                Deal.company_id.in_(owned_company_ids),
+                Deal.owner_id != current_user.id,
+                ~Deal.id.in_(collaborating_deal_ids)
+            )
+
+    # 3. Company Filter (single ID or multiple IDs comma-separated / list)
+    if company_id:
+        try:
+            if isinstance(company_id, (list, tuple, set)):
+                cids = [int(x) for x in company_id if str(x).strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            elif isinstance(company_id, str) and ',' in company_id:
+                cids = [int(x.strip()) for x in company_id.split(',') if x.strip()]
+                if cids:
+                    query = query.filter(Deal.company_id.in_(cids))
+            else:
+                cid = int(company_id)
+                query = query.filter(Deal.company_id == cid)
+        except (ValueError, TypeError):
+            pass
+
+    # 4. Stage Filter (must still be an open stage to be included in pipeline export)
+    if stage:
+        clean_stage = stage.strip().upper()
+        if clean_stage in Stages.ALL:
+            query = query.filter(Deal.stage == clean_stage)
+
+    # 5. Owner Filter
+    if owner_id:
+        try:
+            oid = int(owner_id)
+            query = query.filter(Deal.owner_id == oid)
+        except (ValueError, TypeError):
+            pass
+
+    # 6. Search across Deal Title and Company Name
+    query = query.outerjoin(Company, Deal.company_id == Company.id)
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        query = query.filter(
+            db.or_(
+                db.func.lower(Deal.title).like(term),
+                db.func.lower(Company.name).like(term)
+            )
+        )
+
+    # 7. Filter strictly to OPEN deals (not WON, not LOST, not deleted)
+    query = query.filter(
+        Deal.deleted_at == None,
+        Deal.stage.in_(Stages.OPEN_ORDERED)
+    ).order_by(Company.name.asc(), Deal.title.asc())
+
+    open_deals = query.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Standard CSV Header
+    writer.writerow(['Company', 'Deal Title', 'Stage', 'Value', 'Weighted Value'])
+
+    for d in open_deals:
+        comp_name = d.company.name if d.company else "Unknown"
+        val = float(d.value)
+        prob = WIN_PROBABILITIES.get(d.stage, 0.0)
+        weighted_val = round(val * prob, 2)
+
+        writer.writerow([
+            comp_name,
+            d.title,
+            d.stage,
+            f"{val:.2f}",
+            f"{weighted_val:.2f}"
+        ])
+
+    csv_data = output.getvalue()
+    output.close()
+
+    filename = f"pipeline_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Type": "text/csv; charset=utf-8"
+        }
+    )
+
