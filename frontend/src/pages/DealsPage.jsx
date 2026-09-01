@@ -2004,94 +2004,144 @@ export default function DealsPage() {
       )}
 
       {/* Goal 7: Bulk Advance Confirmation Modal */}
-      {isBulkAdvanceOpen && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setIsBulkAdvanceOpen(false); }}>
-          <div className="modal" style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FastForward size={18} className="text-primary" />
-                <h3>Bulk Advance Deals</h3>
+      {isBulkAdvanceOpen && (() => {
+        const selectedDealsList = deals.filter(d => selectedDealIds.includes(d.id));
+        const negotiationDealsCount = selectedDealsList.filter(d => d.stage === 'NEGOTIATION').length;
+        const earlyDealsCount = selectedDealsList.filter(d => ['NEW', 'QUALIFIED', 'PROPOSAL'].includes(d.stage)).length;
+        const closedDealsCount = selectedDealsList.filter(d => ['WON', 'LOST'].includes(d.stage)).length;
+
+        return (
+          <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setIsBulkAdvanceOpen(false); }}>
+            <div className="modal" style={{ maxWidth: '490px' }}>
+              <div className="modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FastForward size={18} className="text-primary" />
+                  <h3>Bulk Advance Deals</h3>
+                </div>
+                <button className="modal-close" onClick={() => setIsBulkAdvanceOpen(false)}>✕</button>
               </div>
-              <button className="modal-close" onClick={() => setIsBulkAdvanceOpen(false)}>✕</button>
-            </div>
 
-            <div className="modal-body">
-              <p className="text-muted" style={{ marginBottom: '16px', fontSize: '0.875rem' }}>
-                You are about to advance <strong>{selectedDealIds.length}</strong> selected {selectedDealIds.length === 1 ? 'deal' : 'deals'} forward to their next sequential stage.
-              </p>
+              <div className="modal-body">
+                <p className="text-muted" style={{ marginBottom: '14px', fontSize: '0.875rem' }}>
+                  You have selected <strong>{selectedDealIds.length}</strong> {selectedDealIds.length === 1 ? 'deal' : 'deals'} to advance:
+                </p>
 
-              <div style={{
-                background: 'var(--color-bg-secondary)',
-                padding: '14px',
-                borderRadius: '8px',
-                border: '1px solid var(--color-border)',
-                marginBottom: '16px'
-              }}>
-                <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '10px' }}>
-                  How should deals in Negotiation be handled?
+                {/* Stage Breakdown Badges */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                  {earlyDealsCount > 0 && (
+                    <span className="badge badge-indigo" style={{ fontSize: '0.75rem' }}>
+                      {earlyDealsCount} in Early Pipeline
+                    </span>
+                  )}
+                  {negotiationDealsCount > 0 && (
+                    <span className="badge badge-amber" style={{ fontSize: '0.75rem' }}>
+                      {negotiationDealsCount} in Negotiation
+                    </span>
+                  )}
+                  {closedDealsCount > 0 && (
+                    <span className="badge badge-gray" style={{ fontSize: '0.75rem' }}>
+                      {closedDealsCount} Already Closed
+                    </span>
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.825rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="negotiationOutcome"
-                      value="SKIP"
-                      checked={bulkAdvanceOutcome === 'SKIP'}
-                      onChange={() => setBulkAdvanceOutcome('SKIP')}
-                      style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
-                    />
-                    <div>
-                      <strong>Keep in Negotiation (Do not close)</strong> <span className="text-muted">— Default (Skips terminal closing)</span>
+                {/* Conditionally show Negotiation Resolution Box only if Negotiation deals exist */}
+                {negotiationDealsCount > 0 ? (
+                  <div style={{
+                    background: 'var(--color-bg-secondary)',
+                    padding: '14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--color-border)',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '10px' }}>
+                      Deals in Negotiation ({negotiationDealsCount}):
                     </div>
-                  </label>
 
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="negotiationOutcome"
-                      value="WON"
-                      checked={bulkAdvanceOutcome === 'WON'}
-                      onChange={() => setBulkAdvanceOutcome('WON')}
-                      style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
-                    />
-                    <div>
-                      <strong>Mark as WON</strong> <span className="text-muted">— Close Negotiation deals as Won (100% win probability)</span>
-                    </div>
-                  </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.825rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="negotiationOutcome"
+                          value="SKIP"
+                          checked={bulkAdvanceOutcome === 'SKIP'}
+                          onChange={() => setBulkAdvanceOutcome('SKIP')}
+                          style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
+                        />
+                        <div>
+                          <strong>Keep as it is</strong> <span className="text-muted">— Skip negotiation deals for now</span>
+                        </div>
+                      </label>
 
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="negotiationOutcome"
-                      value="LOST"
-                      checked={bulkAdvanceOutcome === 'LOST'}
-                      onChange={() => setBulkAdvanceOutcome('LOST')}
-                      style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
-                    />
-                    <div>
-                      <strong>Mark as LOST</strong> <span className="text-muted">— Close Negotiation deals as Lost (0% win probability)</span>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="negotiationOutcome"
+                          value="WON"
+                          checked={bulkAdvanceOutcome === 'WON'}
+                          onChange={() => setBulkAdvanceOutcome('WON')}
+                          style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
+                        />
+                        <div>
+                          <strong>Mark as WON</strong> <span className="text-muted">— Close Negotiation deals as Won (100% win probability)</span>
+                        </div>
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="negotiationOutcome"
+                          value="LOST"
+                          checked={bulkAdvanceOutcome === 'LOST'}
+                          onChange={() => setBulkAdvanceOutcome('LOST')}
+                          style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
+                        />
+                        <div>
+                          <strong>Mark as LOST</strong> <span className="text-muted">— Close Negotiation deals as Lost (0% win probability)</span>
+                        </div>
+                      </label>
                     </div>
-                  </label>
-                </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    background: 'var(--color-bg-secondary)',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--color-border)',
+                    marginBottom: '16px',
+                    fontSize: '0.825rem'
+                  }}>
+                    <div style={{ fontWeight: 600, color: 'var(--color-text-white)', marginBottom: '4px' }}>
+                      Standard Sequential Progression:
+                    </div>
+                    <div className="text-muted" style={{ lineHeight: 1.5 }}>
+                      Selected deals will advance one stage forward:<br />
+                      • <code>NEW</code> → <code>QUALIFIED</code><br />
+                      • <code>QUALIFIED</code> → <code>PROPOSAL</code><br />
+                      • <code>PROPOSAL</code> → <code>NEGOTIATION</code>
+                    </div>
+                  </div>
+                )}
+
+                {closedDealsCount > 0 && (
+                  <div className="text-xs text-muted" style={{ lineHeight: 1.4, marginTop: '8px' }}>
+                    * Note: {closedDealsCount} {closedDealsCount === 1 ? 'deal is' : 'deals are'} already closed and will be safely skipped.
+                  </div>
+                )}
               </div>
 
-              <div className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
-                * Note: Ineligible deals (e.g. deals already closed) will be reported in the results summary without failing the rest of the batch.
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setIsBulkAdvanceOpen(false)} disabled={bulkAdvanceLoading}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleBulkAdvanceSubmit} disabled={bulkAdvanceLoading}>
+                  {bulkAdvanceLoading ? "Advancing..." : `Advance ${selectedDealIds.length} Deals`}
+                </button>
               </div>
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" className="btn btn-ghost" onClick={() => setIsBulkAdvanceOpen(false)} disabled={bulkAdvanceLoading}>
-                Cancel
-              </button>
-              <button type="button" className="btn btn-primary" onClick={handleBulkAdvanceSubmit} disabled={bulkAdvanceLoading}>
-                {bulkAdvanceLoading ? "Advancing..." : `Advance ${selectedDealIds.length} Deals`}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Goal 7: Bulk Reassign Modal */}
       {isBulkReassignOpen && (
