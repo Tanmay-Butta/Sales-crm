@@ -180,3 +180,47 @@ def add_note(current_user, deal_id):
         'history': history_entry.to_dict(),
         'message': 'Note added to deal timeline'
     }), 201
+
+
+# --- Goal 7: Bulk Operations & Pipeline CSV Export Endpoints ---
+
+@deals_bp.route('/bulk-advance', methods=['POST'])
+@auth_required
+def bulk_advance(current_user):
+    """Bulk advance selected deals to the next stage (Sales Managers only §7)."""
+    body = request.get_json() or {}
+    deal_ids = body.get('deal_ids', [])
+    negotiation_outcome = body.get('negotiation_outcome')
+    
+    result = deal_service.bulk_advance_deals(
+        current_user=current_user,
+        deal_ids=deal_ids,
+        negotiation_outcome=negotiation_outcome
+    )
+    return jsonify(result), 200
+
+
+@deals_bp.route('/bulk-reassign', methods=['POST'])
+@auth_required
+def bulk_reassign(current_user):
+    """Bulk reassign selected deals to a new Sales Rep owner (Sales Managers only §7)."""
+    body = request.get_json() or {}
+    deal_ids = body.get('deal_ids', [])
+    owner_id = body.get('owner_id')
+    keep_as_collab = body.get('keep_previous_owner_as_collaborator', True)
+
+    result = deal_service.bulk_reassign_deals(
+        current_user=current_user,
+        deal_ids=deal_ids,
+        owner_id=owner_id,
+        keep_previous_owner_as_collaborator=keep_as_collab
+    )
+    return jsonify(result), 200
+
+
+@deals_bp.route('/export-csv', methods=['GET'])
+@auth_required
+def export_csv(current_user):
+    """Export all open deals visible to the user as a pipeline CSV file (§7)."""
+    return deal_service.export_pipeline_csv(current_user)
+
