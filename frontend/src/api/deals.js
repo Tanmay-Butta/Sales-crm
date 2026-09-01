@@ -59,6 +59,30 @@ export const dealsAPI = {
     return client.post(`/deals/${dealId}/reopen`);
   },
 
+  // Manager-only Bulk Actions (§7)
+  bulkAdvance: (dealIds, negotiationOutcome = null) => {
+    return client.post('/deals/bulk-advance', {
+      deal_ids: dealIds,
+      negotiation_outcome: negotiationOutcome
+    });
+  },
+
+  bulkReassign: (dealIds, ownerId, keepPreviousOwnerAsCollaborator = true) => {
+    return client.post('/deals/bulk-reassign', {
+      deal_ids: dealIds,
+      owner_id: ownerId,
+      keep_previous_owner_as_collaborator: keepPreviousOwnerAsCollaborator
+    });
+  },
+
+  // Pipeline CSV Export (§7, supports search & active filters)
+  exportCSV: (params = {}) => {
+    return client.get('/deals/export-csv', {
+      params,
+      responseType: 'blob'
+    });
+  },
+
   // Immutable Notes (append-only, §9)
   addNote: (dealId, note) => {
     return client.post(`/deals/${dealId}/notes`, { note });

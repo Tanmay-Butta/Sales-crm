@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash,
   ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock, MessageSquare, Sparkles, UserCheck, UserMinus,
-  Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, SlidersHorizontal, ChevronDown, Check
+  Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, SlidersHorizontal, ChevronDown, Check,
+  Download, FastForward
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -22,6 +23,25 @@ export default function DealsPage() {
   // Dropdown reference data
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
+
+  // Goal 7: Deal Multi-Selection & Bulk Actions state
+  const [selectedDealIds, setSelectedDealIds] = useState([]);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  // Goal 7: Bulk Advance Modal state
+  const [isBulkAdvanceOpen, setIsBulkAdvanceOpen] = useState(false);
+  const [bulkAdvanceOutcome, setBulkAdvanceOutcome] = useState("SKIP"); // 'SKIP' | 'WON' | 'LOST'
+  const [bulkAdvanceLoading, setBulkAdvanceLoading] = useState(false);
+
+  // Goal 7: Bulk Reassign Modal state
+  const [isBulkReassignOpen, setIsBulkReassignOpen] = useState(false);
+  const [bulkTargetOwnerId, setBulkTargetOwnerId] = useState("");
+  const [bulkKeepAsCollab, setBulkKeepAsCollab] = useState(true);
+  const [bulkReassignLoading, setBulkReassignLoading] = useState(false);
+
+  // Goal 7: Bulk Results Modal state
+  const [isBulkResultsOpen, setIsBulkResultsOpen] = useState(false);
+  const [bulkResultsData, setBulkResultsData] = useState(null);
 
   // Server-side Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -171,6 +191,114 @@ export default function DealsPage() {
     });
   };
 
+  // Reset selected deals when search, filters, viewMode, or page change to avoid accidental "ghost" actions on invisible deals
+  useEffect(() => {
+    setSelectedDealIds([]);
+  }, [debouncedSearch, selectedCompanyIds, filterStage, filterOwner, viewMode, page]);
+
+  // Goal 7: Toggle deal selection
+  const toggleDealSelect = (dealId) => {
+    setSelectedDealIds(prev => {
+      if (prev.includes(dealId)) {
+        return prev.filter(id => id !== dealId);
+      } else {
+        return [...prev, dealId];
+      }
+    });
+  };
+
+  const toggleSelectAllCurrentPage = () => {
+    if (deals.length === 0) return;
+    const pageIds = deals.map(d => d.id);
+    const allSelected = pageIds.every(id => selectedDealIds.includes(id));
+    if (allSelected) {
+      setSelectedDealIds([]);
+    } else {
+      setSelectedDealIds(pageIds);
+    }
+  };
+
+  // Goal 7: Pipeline CSV Export Handler (supports active search & filters)
+  const handleExportCSV = async () => {
+    setExportLoading(true);
+    try {
+      const params = {};
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      if (selectedCompanyIds.length > 0) params.company_id = selectedCompanyIds.join(',');
+      if (filterStage) params.stage = filterStage;
+      if (filterOwner) params.owner_id = filterOwner;
+      if (!isManager && viewMode !== "ALL") params.view_mode = viewMode.toLowerCase();
+
+      const res = await dealsAPI.exportCSV(params);
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      link.setAttribute('download', `pipeline_export_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Pipeline CSV exported successfully");
+    } catch (err) {
+      console.error("Failed to export pipeline CSV:", err);
+      toast.error("Failed to export CSV file");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  // Goal 7: Bulk Advance Submit Handler
+  const handleBulkAdvanceSubmit = async () => {
+    if (selectedDealIds.length === 0) return;
+    setBulkAdvanceLoading(true);
+    try {
+      const outcome = bulkAdvanceOutcome === "SKIP" ? null : bulkAdvanceOutcome;
+      const res = await dealsAPI.bulkAdvance(selectedDealIds, outcome);
+      console.log("[Bulk Advance Response]", res.data);
+      setBulkResultsData(res.data);
+      setIsBulkAdvanceOpen(false);
+      setIsBulkResultsOpen(true);
+    } catch (err) {
+      console.error("Failed to bulk advance deals:", err);
+      toast.error(err.response?.data?.error?.message || "Bulk advance failed");
+    } finally {
+      setBulkAdvanceLoading(false);
+    }
+  };
+
+  // Goal 7: Bulk Reassign Submit Handler
+  const handleBulkReassignSubmit = async () => {
+    if (selectedDealIds.length === 0 || !bulkTargetOwnerId) return;
+    setBulkReassignLoading(true);
+    try {
+      const res = await dealsAPI.bulkReassign(
+        selectedDealIds,
+        parseInt(bulkTargetOwnerId, 10),
+        bulkKeepAsCollab
+      );
+      console.log("[Bulk Reassign Response]", res.data);
+      setBulkResultsData(res.data);
+      setIsBulkReassignOpen(false);
+      setIsBulkResultsOpen(true);
+    } catch (err) {
+      console.error("Failed to bulk reassign deals:", err);
+      toast.error(err.response?.data?.error?.message || "Bulk reassign failed");
+    } finally {
+      setBulkReassignLoading(false);
+    }
+  };
+
+  // Close Bulk Results Modal & Refresh
+  const handleCloseBulkResults = () => {
+    setIsBulkResultsOpen(false);
+    setBulkResultsData(null);
+    setSelectedDealIds([]);
+    fetchDeals();
+  };
+
   // Clear all filters handler
   const handleClearFilters = () => {
     setSearchQuery("");
@@ -182,6 +310,7 @@ export default function DealsPage() {
     setSortBy("updated_at");
     setSortDir("desc");
     setPage(1);
+    setSelectedDealIds([]);
   };
 
   const isFiltered = Boolean(
@@ -558,8 +687,17 @@ export default function DealsPage() {
           <p className="text-muted">Manage and search your sales pipeline across all visible companies</p>
         </div>
         
-        <div className="page-actions">
-          <button className="btn btn-primary" onClick={openNewModal}>
+        <div className="page-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleExportCSV}
+            disabled={exportLoading}
+            title="Export open pipeline deals to CSV"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Download size={16} /> {exportLoading ? "Exporting..." : "Export CSV"}
+          </button>
+          <button className="btn btn-primary" onClick={openNewModal} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <Plus size={18} /> New Deal
           </button>
         </div>
@@ -950,6 +1088,17 @@ export default function DealsPage() {
           <table className="table">
             <thead>
               <tr>
+                {isManager && (
+                  <th style={{ width: '42px', textAlign: 'center', padding: '12px 10px' }}>
+                    <input
+                      type="checkbox"
+                      checked={deals.length > 0 && deals.every(d => selectedDealIds.includes(d.id))}
+                      onChange={toggleSelectAllCurrentPage}
+                      style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                      title="Select / Deselect all deals on current page"
+                    />
+                  </th>
+                )}
                 <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortChange('title')}>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                     TITLE
@@ -981,9 +1130,20 @@ export default function DealsPage() {
                 const canEdit = isManager || isOwner || isCollab;
                 const canManageCollabs = isManager || isOwner;
                 const canDelete = isManager || isOwner;
+                const isSelected = selectedDealIds.includes(deal.id);
                 
                 return (
-                  <tr key={deal.id}>
+                  <tr key={deal.id} style={{ background: isSelected ? 'rgba(99, 102, 241, 0.08)' : undefined }}>
+                    {isManager && (
+                      <td style={{ width: '42px', textAlign: 'center', padding: '12px 10px' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleDealSelect(deal.id)}
+                          style={{ cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                        />
+                      </td>
+                    )}
                     <td className="font-medium text-white">{highlightMatch(deal.title, debouncedSearch)}</td>
                     <td>
                       <div className="flex items-center gap-2">
@@ -1764,6 +1924,310 @@ export default function DealsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Goal 7: Floating Bulk Action Bar for Sales Managers */}
+      {isManager && selectedDealIds.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          bottom: '28px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 900,
+          background: 'var(--color-bg-card)',
+          border: '1px solid var(--color-primary)',
+          borderRadius: '12px',
+          padding: '10px 22px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          animation: 'fadeIn 0.2s ease-in-out'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              background: 'var(--color-primary)',
+              color: '#ffffff',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontWeight: 700,
+              fontSize: '0.8rem'
+            }}>
+              {selectedDealIds.length}
+            </span>
+            <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+              {selectedDealIds.length === 1 ? 'deal selected' : 'deals selected'}
+            </span>
+          </div>
+
+          <div style={{ height: '20px', width: '1px', background: 'var(--color-border)' }} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setBulkAdvanceOutcome("SKIP");
+                setIsBulkAdvanceOpen(true);
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <FastForward size={14} /> Bulk Advance
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setBulkTargetOwnerId(reps[0]?.id ? String(reps[0].id) : "");
+                setBulkKeepAsCollab(true);
+                setIsBulkReassignOpen(true);
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <UserCheck size={14} /> Bulk Reassign
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm text-muted"
+              onClick={() => setSelectedDealIds([])}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}
+              title="Clear selection"
+            >
+              <X size={14} /> Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Goal 7: Bulk Advance Confirmation Modal */}
+      {isBulkAdvanceOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setIsBulkAdvanceOpen(false); }}>
+          <div className="modal" style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FastForward size={18} className="text-primary" />
+                <h3>Bulk Advance Deals</h3>
+              </div>
+              <button className="modal-close" onClick={() => setIsBulkAdvanceOpen(false)}>✕</button>
+            </div>
+
+            <div className="modal-body">
+              <p className="text-muted" style={{ marginBottom: '16px', fontSize: '0.875rem' }}>
+                You are about to advance <strong>{selectedDealIds.length}</strong> selected {selectedDealIds.length === 1 ? 'deal' : 'deals'} forward to their next sequential stage.
+              </p>
+
+              <div style={{
+                background: 'var(--color-bg-secondary)',
+                padding: '14px',
+                borderRadius: '8px',
+                border: '1px solid var(--color-border)',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '10px' }}>
+                  How should deals in Negotiation be handled?
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.825rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="negotiationOutcome"
+                      value="SKIP"
+                      checked={bulkAdvanceOutcome === 'SKIP'}
+                      onChange={() => setBulkAdvanceOutcome('SKIP')}
+                      style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
+                    />
+                    <div>
+                      <strong>Keep in Negotiation (Do not close)</strong> <span className="text-muted">— Default (Skips terminal closing)</span>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="negotiationOutcome"
+                      value="WON"
+                      checked={bulkAdvanceOutcome === 'WON'}
+                      onChange={() => setBulkAdvanceOutcome('WON')}
+                      style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
+                    />
+                    <div>
+                      <strong>Mark as WON</strong> <span className="text-muted">— Close Negotiation deals as Won (100% win probability)</span>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="negotiationOutcome"
+                      value="LOST"
+                      checked={bulkAdvanceOutcome === 'LOST'}
+                      onChange={() => setBulkAdvanceOutcome('LOST')}
+                      style={{ marginTop: '2px', accentColor: 'var(--color-primary)' }}
+                    />
+                    <div>
+                      <strong>Mark as LOST</strong> <span className="text-muted">— Close Negotiation deals as Lost (0% win probability)</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
+                * Note: Ineligible deals (e.g. deals already closed) will be reported in the results summary without failing the rest of the batch.
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setIsBulkAdvanceOpen(false)} disabled={bulkAdvanceLoading}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleBulkAdvanceSubmit} disabled={bulkAdvanceLoading}>
+                {bulkAdvanceLoading ? "Advancing..." : `Advance ${selectedDealIds.length} Deals`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Goal 7: Bulk Reassign Modal */}
+      {isBulkReassignOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setIsBulkReassignOpen(false); }}>
+          <div className="modal" style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserCheck size={18} className="text-primary" />
+                <h3>Bulk Reassign Owner</h3>
+              </div>
+              <button className="modal-close" onClick={() => setIsBulkReassignOpen(false)}>✕</button>
+            </div>
+
+            <div className="modal-body">
+              <p className="text-muted" style={{ marginBottom: '16px', fontSize: '0.875rem' }}>
+                Reassign <strong>{selectedDealIds.length}</strong> selected {selectedDealIds.length === 1 ? 'deal' : 'deals'} to a designated Sales Rep.
+              </p>
+
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label className="form-label">Select New Owner *</label>
+                <select
+                  className="form-select"
+                  value={bulkTargetOwnerId}
+                  onChange={(e) => setBulkTargetOwnerId(e.target.value)}
+                  required
+                >
+                  <option value="" disabled>-- Select a Sales Rep --</option>
+                  {reps.map(r => (
+                    <option key={r.id} value={r.id}>{r.full_name} ({r.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{
+                background: 'var(--color-bg-secondary)',
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--color-border)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px'
+              }}>
+                <input
+                  type="checkbox"
+                  id="bulkKeepAsCollab"
+                  checked={bulkKeepAsCollab}
+                  onChange={(e) => setBulkKeepAsCollab(e.target.checked)}
+                  style={{ marginTop: '3px', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                />
+                <label htmlFor="bulkKeepAsCollab" style={{ fontSize: '0.825rem', cursor: 'pointer' }}>
+                  <strong>Keep previous owner(s) as collaborator(s)</strong>
+                  <div className="text-xs text-muted" style={{ marginTop: '2px', lineHeight: 1.4 }}>
+                    Previous reps will automatically retain access to view and collaborate on their reassigned deals.
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setIsBulkReassignOpen(false)} disabled={bulkReassignLoading}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleBulkReassignSubmit} disabled={bulkReassignLoading || !bulkTargetOwnerId}>
+                {bulkReassignLoading ? "Reassigning..." : `Reassign ${selectedDealIds.length} Deals`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Goal 7: Bulk Operation Results Modal */}
+      {isBulkResultsOpen && bulkResultsData && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) handleCloseBulkResults(); }}>
+          <div className="modal" style={{ maxWidth: '640px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
+              <div>
+                <h3>Bulk Operation Results</h3>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '6px', alignItems: 'center' }}>
+                  <span className="badge badge-green" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle2 size={12} />
+                    {bulkResultsData.total_succeeded} Succeeded
+                  </span>
+                  {bulkResultsData.total_failed > 0 && (
+                    <span className="badge badge-red" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <XCircle size={12} />
+                      {bulkResultsData.total_failed} Ineligible / Rejected
+                    </span>
+                  )}
+                  <span className="text-xs text-muted" style={{ marginLeft: '4px' }}>
+                    Total Processed: {bulkResultsData.total_requested}
+                  </span>
+                </div>
+              </div>
+              <button className="modal-close" onClick={handleCloseBulkResults}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ padding: '12px 20px', overflowY: 'auto', flex: 1 }}>
+              <table className="table" style={{ fontSize: '0.825rem', margin: 0 }}>
+                <thead>
+                  <tr>
+                    <th>DEAL</th>
+                    <th style={{ width: '105px' }}>STATUS</th>
+                    <th>OUTCOME / REASON</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkResultsData.results?.map((res, idx) => (
+                    <tr key={idx}>
+                      <td className="font-medium text-white" style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {res.deal_title || `Deal #${res.deal_id}`}
+                      </td>
+                      <td>
+                        {res.success ? (
+                          <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={12} /> Success
+                          </span>
+                        ) : (
+                          <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <XCircle size={12} /> Rejected
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-muted" style={{ fontSize: '0.8rem', lineHeight: 1.4 }}>
+                        {res.message || res.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-primary" onClick={handleCloseBulkResults}>
+                Close & Refresh Deals
+              </button>
+            </div>
           </div>
         </div>
       )}
