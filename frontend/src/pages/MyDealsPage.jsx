@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
-import { 
+import {
   ListTodo, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, X, UserPlus, Trash,
   ArrowRight, ArrowLeft, CheckCircle2, XCircle, Lock, RotateCcw, MessageSquare, Sparkles, UserCheck, UserMinus
 } from "lucide-react";
@@ -12,12 +12,12 @@ import { authAPI } from "../api/auth";
 
 export default function MyDealsPage() {
   const { user, isManager } = useAuth();
-  
+
   // If user is a Sales Manager, redirect to global Deals page since managers oversee the full pipeline
   if (isManager) {
     return <Navigate to="/deals" replace />;
   }
-  
+
   const [deals, setDeals] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
@@ -65,7 +65,7 @@ export default function MyDealsPage() {
         companiesAPI.getCompanies(),
         authAPI.getReps()
       ]);
-      
+
       setDeals(myDealsRes.data.deals);
       setCompanies(companiesRes.data.companies.filter(c => !c.archived_at));
       setReps(repsRes.data.users);
@@ -118,12 +118,12 @@ export default function MyDealsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    
+
     try {
       const payload = { ...formData };
       payload.company_id = parseInt(payload.company_id, 10);
       payload.value = parseFloat(payload.value);
-      
+
       if (!isManager) delete payload.owner_id;
       else if (payload.owner_id) payload.owner_id = parseInt(payload.owner_id, 10);
 
@@ -142,7 +142,7 @@ export default function MyDealsPage() {
         await dealsAPI.createDeal(payload);
         toast.success("Deal created successfully");
       }
-      
+
       closeModal();
       fetchData();
     } catch (err) {
@@ -155,7 +155,7 @@ export default function MyDealsPage() {
 
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this deal?")) return;
-    
+
     try {
       await dealsAPI.deleteDeal(id);
       toast.success("Deal deleted");
@@ -181,7 +181,7 @@ export default function MyDealsPage() {
       await dealsAPI.addCollaborator(collabModalDeal.id, parseInt(selectedRepId, 10));
       toast.success("Collaborator added successfully");
       setSelectedRepId("");
-      
+
       // Refresh modal deal and list
       const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
       setCollabModalDeal(updatedDealRes.data.deal);
@@ -196,12 +196,12 @@ export default function MyDealsPage() {
 
   const handleRemoveCollaborator = async (userId) => {
     if (!window.confirm("Remove this collaborator from the deal?")) return;
-    
+
     setCollabLoading(true);
     try {
       await dealsAPI.removeCollaborator(collabModalDeal.id, userId);
       toast.success("Collaborator removed");
-      
+
       const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
       setCollabModalDeal(updatedDealRes.data.deal);
       fetchData();
@@ -340,7 +340,7 @@ export default function MyDealsPage() {
           <h2>My Deals</h2>
           <p className="text-muted">Deals where you are the Owner or an active Collaborator</p>
         </div>
-        
+
         <div className="page-actions">
           <button className="btn btn-primary" onClick={openNewModal}>
             <Plus size={18} /> New Deal
@@ -348,7 +348,7 @@ export default function MyDealsPage() {
         </div>
       </div>
 
-      <div className="card table-container">
+      <div className="card table-container" style={{ padding: 0 }}>
         {loading ? (
           <div className="p-8 text-center text-muted">Loading your deals...</div>
         ) : deals.length === 0 ? (
@@ -424,8 +424,8 @@ export default function MyDealsPage() {
                         {!deal.is_closed && (
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
                             {deal.stage === 'NEW' && (
-                              <button 
-                                className="btn btn-xs btn-primary" 
+                              <button
+                                className="btn btn-xs btn-primary"
                                 style={{ padding: '2px 8px', fontSize: '11px' }}
                                 onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
                                 title="Advance to Qualified"
@@ -436,16 +436,16 @@ export default function MyDealsPage() {
 
                             {deal.stage === 'QUALIFIED' && (
                               <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
+                                <button
+                                  className="btn btn-xs btn-ghost text-muted"
                                   style={{ padding: '2px 6px', fontSize: '11px' }}
                                   onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'NEW'); }}
                                   title="Move back to New (requires reason)"
                                 >
                                   <ArrowLeft size={12} /> Back
                                 </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
+                                <button
+                                  className="btn btn-xs btn-primary"
                                   style={{ padding: '2px 8px', fontSize: '11px' }}
                                   onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'PROPOSAL'); }}
                                   title="Advance to Proposal"
@@ -457,16 +457,16 @@ export default function MyDealsPage() {
 
                             {deal.stage === 'PROPOSAL' && (
                               <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
+                                <button
+                                  className="btn btn-xs btn-ghost text-muted"
                                   style={{ padding: '2px 6px', fontSize: '11px' }}
                                   onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'QUALIFIED'); }}
                                   title="Move back to Qualified (requires reason)"
                                 >
                                   <ArrowLeft size={12} /> Back
                                 </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
+                                <button
+                                  className="btn btn-xs btn-primary"
                                   style={{ padding: '2px 8px', fontSize: '11px' }}
                                   onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'NEGOTIATION'); }}
                                   title="Advance to Negotiation"
@@ -478,24 +478,24 @@ export default function MyDealsPage() {
 
                             {deal.stage === 'NEGOTIATION' && (
                               <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
+                                <button
+                                  className="btn btn-xs btn-ghost text-muted"
                                   style={{ padding: '2px 6px', fontSize: '11px' }}
                                   onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'PROPOSAL'); }}
                                   title="Move back to Proposal (requires reason)"
                                 >
                                   <ArrowLeft size={12} /> Back
                                 </button>
-                                <button 
-                                  className="btn btn-xs" 
+                                <button
+                                  className="btn btn-xs"
                                   style={{ background: '#10b981', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
                                   onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'WON'); }}
                                   title="Mark deal Won"
                                 >
                                   <CheckCircle2 size={12} /> Won
                                 </button>
-                                <button 
-                                  className="btn btn-xs" 
+                                <button
+                                  className="btn btn-xs"
                                   style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
                                   onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'LOST'); }}
                                   title="Mark deal Lost"
@@ -525,7 +525,7 @@ export default function MyDealsPage() {
                     <td>
                       <div className="flex items-center justify-end gap-2">
                         {/* Edit Deal */}
-                        <button 
+                        <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => openEditModal(deal)}
                           title="Edit Deal"
@@ -535,7 +535,7 @@ export default function MyDealsPage() {
 
                         {/* Manage Collaborators (Owner or Manager) */}
                         {canManageCollabs && (
-                          <button 
+                          <button
                             className="btn btn-ghost btn-sm text-primary"
                             onClick={() => openCollaboratorsModal(deal)}
                             title="Manage Collaborators"
@@ -545,7 +545,7 @@ export default function MyDealsPage() {
                         )}
 
                         {/* Audit Trail Timeline */}
-                        <button 
+                        <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => openHistoryModal(deal)}
                           title="View Deal Timeline"
@@ -555,7 +555,7 @@ export default function MyDealsPage() {
 
                         {/* Delete Deal (Owner or Manager) */}
                         {canDelete && (
-                          <button 
+                          <button
                             className="btn btn-ghost btn-sm text-red"
                             onClick={() => handleDelete(deal.id)}
                             title="Delete Deal"
@@ -581,10 +581,10 @@ export default function MyDealsPage() {
               <h3>{editingDeal ? "Edit Deal" : "New Deal"}</h3>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
-            
+
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                
+
                 <div className="form-group">
                   <label className="form-label">Deal Title *</label>
                   <input
@@ -597,9 +597,9 @@ export default function MyDealsPage() {
                     placeholder="e.g. Enterprise License Q3"
                   />
                 </div>
-                
+
                 <div className="form-group">
-                  <label className="form-label">Value ($) *</label>
+                  <label className="form-label">Value (₹) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -640,7 +640,7 @@ export default function MyDealsPage() {
                     </select>
                   </div>
                 )}
-                
+
                 {isManager && (
                   <div className="form-group">
                     <label className="form-label">Assign Sales Rep Owner *</label>
@@ -659,7 +659,7 @@ export default function MyDealsPage() {
                     <p className="form-hint">Managers cannot own deals. You must assign a Sales Rep.</p>
                   </div>
                 )}
-                
+
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={closeModal}>
@@ -685,7 +685,7 @@ export default function MyDealsPage() {
               </div>
               <button className="modal-close" onClick={() => setCollabModalDeal(null)}>✕</button>
             </div>
-            
+
             <div className="modal-body">
               <div className="mb-4">
                 <label className="form-label text-xs text-muted">PRIMARY OWNER</label>
@@ -700,7 +700,7 @@ export default function MyDealsPage() {
               <form onSubmit={handleAddCollaborator} style={{ marginBottom: '20px' }}>
                 <label className="form-label">Add Sales Rep Collaborator</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select 
+                  <select
                     className="form-select"
                     value={selectedRepId}
                     onChange={(e) => setSelectedRepId(e.target.value)}
@@ -729,22 +729,22 @@ export default function MyDealsPage() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {collabModalDeal.collaborators.map(c => (
-                      <div 
+                      <div
                         key={c.id}
-                        style={{ 
-                          padding: '8px 12px', 
-                          background: 'var(--color-bg)', 
-                          borderRadius: '6px', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between' 
+                        style={{
+                          padding: '8px 12px',
+                          background: 'var(--color-bg)',
+                          borderRadius: '6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
                         }}
                       >
                         <div>
                           <div className="font-medium text-white">{c.full_name}</div>
                           <div className="text-xs text-muted">{c.email}</div>
                         </div>
-                        <button 
+                        <button
                           className="btn btn-ghost btn-sm text-red"
                           onClick={() => handleRemoveCollaborator(c.id)}
                           disabled={collabLoading}
@@ -782,7 +782,7 @@ export default function MyDealsPage() {
               </div>
               <button className="modal-close" onClick={() => setHistoryModalDeal(null)}>✕</button>
             </div>
-            
+
             {/* Add Note Input */}
             <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
               <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '8px' }}>
@@ -795,9 +795,9 @@ export default function MyDealsPage() {
                   maxLength={2000}
                   style={{ flex: 1 }}
                 />
-                <button 
-                  type="submit" 
-                  className="btn btn-primary" 
+                <button
+                  type="submit"
+                  className="btn btn-primary"
                   disabled={noteSubmitting || !noteText.trim()}
                   style={{ whiteSpace: 'nowrap' }}
                 >
@@ -815,7 +815,7 @@ export default function MyDealsPage() {
                 <div style={{ position: 'relative', padding: '8px 4px' }}>
                   {historyEvents.map((h, idx) => {
                     const isLast = idx === historyEvents.length - 1;
-                    
+
                     let icon = <History size={14} style={{ color: '#818cf8' }} />;
                     let actionElement = null;
                     let badgeBg = 'rgba(99, 102, 241, 0.12)';
@@ -826,7 +826,7 @@ export default function MyDealsPage() {
                       badgeBg = 'rgba(56, 189, 248, 0.12)';
                       badgeBorder = 'rgba(56, 189, 248, 0.3)';
                       actionElement = (
-                        <span>created deal in <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> stage with value <strong>${Number(h.new_value?.value || 0).toLocaleString()}</strong></span>
+                        <span>created deal in <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> stage with value <strong>₹{Number(h.new_value?.value || 0).toLocaleString('en-IN')}</strong></span>
                       );
                     } else if (h.event_type === 'STAGE_CHANGED') {
                       icon = <ArrowRight size={14} style={{ color: '#818cf8' }} />;
@@ -927,13 +927,13 @@ export default function MyDealsPage() {
                             <span style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--color-text)' }}>
                               {h.actor?.full_name || `User #${h.actor_id}`}
                             </span>
-                            <span style={{ 
-                              fontSize: '0.8rem', 
-                              background: 'var(--color-bg-tertiary)', 
-                              border: '1px solid var(--color-border)', 
-                              padding: '2px 9px', 
-                              borderRadius: '6px', 
-                              whiteSpace: 'nowrap', 
+                            <span style={{
+                              fontSize: '0.8rem',
+                              background: 'var(--color-bg-tertiary)',
+                              border: '1px solid var(--color-border)',
+                              padding: '2px 9px',
+                              borderRadius: '6px',
+                              whiteSpace: 'nowrap',
                               marginLeft: '12px',
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -1015,7 +1015,7 @@ export default function MyDealsPage() {
               </div>
               <button className="modal-close" onClick={() => setBackwardModalDeal(null)}>✕</button>
             </div>
-            
+
             <form onSubmit={handleBackwardSubmit}>
               <div className="modal-body">
                 <div style={{
