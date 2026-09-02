@@ -72,9 +72,25 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Allowing deals to be assigned to Sales Managers, or silently stripping the previous rep's access when a deal is reassigned.
 - **Why:** Sales Managers oversee the entire pipeline and do not carry individual deal quotas; assigning deals directly to managers distorts team ownership boundaries. Furthermore, when a manager reassigns deals between reps (e.g., rebalancing territory or transitioning enterprise accounts), the originating rep often needs to continue providing context and assisting on the opportunity. Retaining the former owner as a collaborator ensures zero disruption to deal momentum while logging `OWNER_CHANGED` and `COLLABORATOR_ADDED` events in the deal's immutable audit history.
 
+## Decision 13: How Past-Due Alerts and Dismissals Work
+- **Chose:** 
+  1. Allowing only the deal's primary owner and the sales manager to dismiss an overdue alert. Collaborators cannot dismiss it.
+  2. Remembering the exact date that was dismissed on the deal itself, instead of using a simple true/false flag or making a separate alerts table.
+  3. Calculating whether a deal is overdue based on Indian Standard Time (IST).
+- **Rejected:** 
+  - Letting collaborators dismiss alerts on deals they don't own.
+  - Using a permanent "dismissed = true" flag.
+  - Creating a separate alerts database table that needs constant syncing.
+- **Why:** 
+  Goal 10 says the deal owner can dismiss the alert, while Goal 1 says managers can see and act on every deal. In a real sales team, if a rep is on leave or a manager is reviewing the team's pipeline, the manager needs to be able to acknowledge and clear the alert. But a collaborator who is just helping out on a deal shouldn't be dismissing notifications meant for the main owner.
+
+  The reason for storing the dismissed date instead of a simple true/false flag comes down to the requirement in Goal 10: *if the close date changes and that new date passes again, the alert must return*. If you just flip a boolean flag to "dismissed", the system will never alert you again even if the deal is pushed back and missed a second time. By remembering *which* date was dismissed (e.g. Aug 15), if the rep later moves the date to Aug 25 and that date also passes, the system immediately notices that Aug 25 hasn't been dismissed yet and brings the alert right back. It's clean, simple, and avoids having to manage background timers or extra database tables.
+
 ---
 
 ### Assumptions & Business Rules
-- **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is rejected server-side to prevent accumulating new pipeline on dead accounts.
+- **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is blocked to avoid adding fresh pipeline to closed accounts.
 - **Company Ownership Rule**: Company owners must always be Sales Reps, never Sales Managers (Managers oversee the whole pipeline but don't hold individual quota).
+- **Alert Trigger Boundary**: Deals due today are considered on track; a deal becomes past-due only once its expected close date has actually passed. Closed deals (Won or Lost) and deleted deals never trigger alerts.
+
 
