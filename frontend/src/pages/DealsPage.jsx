@@ -168,6 +168,7 @@ export default function DealsPage() {
       setDeals(res.data.deals || []);
       setTotalDeals(res.data.total || 0);
       setTotalPages(res.data.pages || 1);
+      window.dispatchEvent(new Event('deals-updated'));
     } catch (err) {
       console.error("Failed to fetch deals:", err);
       toast.error("Failed to load deals from server");

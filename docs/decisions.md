@@ -92,5 +92,6 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is blocked to avoid adding fresh pipeline to closed accounts.
 - **Company Ownership Rule**: Company owners must always be Sales Reps, never Sales Managers (Managers oversee the whole pipeline but don't hold individual quota).
 - **Alert Trigger Boundary**: Deals due today are considered on track; a deal becomes past-due only once its expected close date has actually passed. Closed deals (Won or Lost) and deleted deals never trigger alerts.
+- **Scope of Deal History**: I considered logging changes to title, value, and expected close date in deal history, but kept history limited to the events explicitly required by the specification (creation, stage transitions, owner reassignments, collaborators, and notes) to avoid unnecessary complexity and keep the audit timeline focused.
 
 

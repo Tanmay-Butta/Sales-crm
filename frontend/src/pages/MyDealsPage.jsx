@@ -69,6 +69,7 @@ export default function MyDealsPage() {
       setDeals(myDealsRes.data.deals);
       setCompanies(companiesRes.data.companies.filter(c => !c.archived_at));
       setReps(repsRes.data.users);
+      window.dispatchEvent(new Event('deals-updated'));
     } catch (err) {
       toast.error("Failed to load your deals");
       console.error(err);
