@@ -218,3 +218,81 @@ I pointed out the vulnerability and insisted on a strict defense-in-depth model:
 5. **Visibility-First Base:** The entire search/filter query chains directly on top of `visibility_service.get_visible_deals_query(current_user)`, ensuring reps can never discover or search deals outside their authorized scope.
 
 I wrote automated backend test cases in `scratch/test_search_filters_pagination.py` to directly test that invalid sort fields (`?sort_by=password_hash`) are rejected with clear error codes, that case-insensitive searches work safely, and that search never exposes unauthorized deals.
+
+---
+
+## 7. Eliminating Redundant Visibility Checks & Reusing `get_deal` in Goal 10 (Alerts)
+
+### The Pre-Story Plan & Context
+Before implementing Goal 10 (Past-due deal alerts), I outlined a checklist of rules to ensure the implementation stayed lean and accurate:
+1. Alerts must only trigger for open deals whose `expected_close_date` has passed (strictly `< today` in Indian Standard Time).
+2. Avoid creating a separate database table for alerts; derive active alerts dynamically from the `deals` table.
+3. Use `alert_dismissed_for_date` on the deal instead of a boolean flag so that if a rep reschedules the date and that new date passes again, the alert returns automatically.
+4. Only the deal's primary owner and the sales manager can dismiss an alert (non-owner collaborators and unauthorized reps must receive a 403 Forbidden).
+5. The navigation sidebar badge should update dynamically across the entire app whenever deals are closed, rescheduled, or dismissed.
+
+### Prompt Sequence
+```text
+Goal 10 — Alerts: implementation checklist
+- Only open deals can generate alerts: stage != WON and stage != LOST
+- A deal is past-due when expected_close_date < today (calculated in Indian Standard Time)
+- Derive alerts from Deal instead of creating a separate Alerts table
+- Use alert_dismissed_for_date (not a boolean) so when the date changes and passes again, the alert returns
+- Deal owner and Manager can dismiss, other reps/collaborators get 403 (enforced on backend)
+- Navigation count badge should update dynamically when deals change state
+```
+
+### What AI Generated
+The AI helped me implement `alert_service.py` and the alert query and dismissal logic. However, to verify deal existence and user access when dismissing an alert, the AI added a brand new helper function inside `visibility_service.py`:
+```python
+# Added into visibility_service.py:
+def can_view_deal(user, deal) -> bool:
+    """Check if a user has permission to view a specific deal."""
+    if user.role == Roles.SALES_MANAGER:
+        return True
+    if deal.owner_id == user.id:
+        return True
+    if DealCollaborator.query.filter_by(deal_id=deal.id, user_id=user.id).first() is not None:
+        return True
+    if deal.company and deal.company.owner_id == user.id:
+        return True
+    return False
+```
+And inside `alert_service.dismiss_alert`, the AI wrote:
+```python
+deal = Deal.query.filter(Deal.id == deal_id, Deal.deleted_at.is_(None)).first()
+if not deal:
+    raise NotFoundError("Deal not found")
+if not visibility_service.can_view_deal(current_user, deal):
+    raise NotFoundError("Deal not found")
+```
+
+### What was Wrong & What I Corrected
+**Code Duplication & Redundancy:** I caught that the AI was creating unnecessary new functions in `visibility_service.py`. We already had `deal_service.get_deal(current_user, deal_id)` which already checks deal existence, handles soft-deletion, and enforces visibility through `visibility_service.get_visible_deals_query(current_user)` in a single clean call!
+
+**My Follow-Up Prompt & Correction:**
+```text
+why do we need to add this
+def can_view_deal(user, deal) -> bool:
+cant we use that get_deal its also checking the same thing in initial stage right
+```
+
+I had the AI revert the unnecessary changes to `visibility_service.py` and refactor `alert_service.dismiss_alert` to use our existing `deal_service.get_deal(current_user, deal_id)` directly:
+```python
+def dismiss_alert(current_user, deal_id):
+    # Reuses existing centralized deal lookup and visibility enforcement
+    deal = deal_service.get_deal(current_user, deal_id)
+
+    # Enforce dismissal permission: Primary Deal Owner or Sales Manager ONLY
+    if current_user.role != Roles.SALES_MANAGER and deal.owner_id != current_user.id:
+        raise AuthorizationError(
+            "Only the deal owner or a sales manager can dismiss this alert",
+            code=ErrorCodes.NOT_AUTHORIZED
+        )
+
+    deal.alert_dismissed_for_date = deal.expected_close_date
+    db.session.commit()
+    return deal
+```
+This kept `visibility_service.py` clean, eliminated duplicate code, and ensured all deal access checks continue to flow through the same centralized `get_deal` service method.
+

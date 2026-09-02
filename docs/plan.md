@@ -99,10 +99,17 @@ The main thing I learned here was that the "small" features were not always actu
   - Actual: **1.5h**
   - What happened: Most of the groundwork was already done from earlier sessions. The `deal_history` table was already immutable and append-only, and every stage change, owner change, collaborator add/remove, and note was already being logged. What I mainly did here was build the timeline UI on the deal detail page and make sure timestamps display correctly in IST. The history entries were already being created by the service layer, so this was more of a frontend task. Tested it by doing a bunch of actions on a deal and checking the timeline showed everything in order.
 
-- **Total for Goals 6, 7, 9**
-  - Estimated: **4.5h**
-  - Actual: **5.5h**
-  - What happened: Bulk actions took a bit more than expected because of the negotiation modal edge case. The rest went pretty smoothly.
+- **Goal 8 — Dashboard**
+  - Estimated: **1.5h**
+  - Actual: **2h**
+  - What happened: The backend aggregation was straightforward once I built on top of `visibility_service.get_visible_deals_query(current_user)`. It computes the 4 headline numbers (open deals count, weighted pipeline value summing probability × value for open deals only, and deals won/lost within the current calendar month) and the breakdowns by stage and owner in a single round-trip. The 8-week deals won chart needed careful logic so all 8 consecutive weeks are present and zero-win weeks don't get omitted. On the frontend, I focused on making the glassmorphism UI clean and subtle, using Indian Rupees (`₹`), and fixing layout widths so nothing overflows or cuts off.
+
+- **Goal 10 — Past-due deal alerts**
+  - Estimated: **1h**
+  - Actual: **1.5h**
+  - What happened: I derived alerts directly from the `deals` table instead of creating an extra database table, which prevented data sync issues. Using `alert_dismissed_for_date = expected_close_date` made dismissal stateless and reliable: if the deal's expected close date is later rescheduled and that new date passes while the deal is still open, the alert naturally returns without needing background cron jobs. Enforced permissions on the backend so only the Deal Owner or a Sales Manager can dismiss (collaborators receive 403 Forbidden). On the frontend, added the active alerts page with quick rescheduling and wired up the navigation sidebar badge so it updates dynamically whenever deals are closed, advanced, or rescheduled.
+
+
 
 ---
 
