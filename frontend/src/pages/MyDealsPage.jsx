@@ -302,9 +302,9 @@ export default function MyDealsPage() {
   };
 
   const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       minimumFractionDigits: 2
     }).format(val);
   };
@@ -348,7 +348,7 @@ export default function MyDealsPage() {
         </div>
       </div>
 
-      <div className="card table-container">
+      <div className="card table-container" style={{ padding: 0 }}>
         {loading ? (
           <div className="p-8 text-center text-muted">Loading your deals...</div>
         ) : deals.length === 0 ? (
@@ -599,7 +599,7 @@ export default function MyDealsPage() {
                 </div>
                 
                 <div className="form-group">
-                  <label className="form-label">Value ($) *</label>
+                  <label className="form-label">Value (₹) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -826,7 +826,7 @@ export default function MyDealsPage() {
                       badgeBg = 'rgba(56, 189, 248, 0.12)';
                       badgeBorder = 'rgba(56, 189, 248, 0.3)';
                       actionElement = (
-                        <span>created deal in <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> stage with value <strong>${Number(h.new_value?.value || 0).toLocaleString()}</strong></span>
+                        <span>created deal in <span className={`badge badge-${h.new_value?.stage?.toLowerCase()}`}>{h.new_value?.stage}</span> stage with value <strong>₹{Number(h.new_value?.value || 0).toLocaleString('en-IN')}</strong></span>
                       );
                     } else if (h.event_type === 'STAGE_CHANGED') {
                       icon = <ArrowRight size={14} style={{ color: '#818cf8' }} />;
