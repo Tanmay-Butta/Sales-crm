@@ -8,10 +8,12 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { useAuth } from '../../contexts/AuthContext';
 import { alertsAPI } from '../../api/alerts';
+import { Menu } from 'lucide-react';
 
 export default function AppLayout() {
   const { user } = useAuth();
   const [alertCount, setAlertCount] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const lastFetchRef = useRef(0);
 
   const fetchAlertCount = useCallback(async () => {
@@ -52,10 +54,20 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
-      <Sidebar alertCount={alertCount} />
+      {isSidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)}></div>
+      )}
+      <Sidebar alertCount={alertCount} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
       <div className="app-main">
         <header className="app-navbar">
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button 
+              className="mobile-menu-btn" 
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu size={20} />
+            </button>
             <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
               {getGreeting()}, {user?.full_name?.split(' ')[0]}
             </span>

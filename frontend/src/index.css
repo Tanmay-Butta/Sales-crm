@@ -1215,3 +1215,111 @@ body {
   font-weight: 500;
   letter-spacing: 0.01em;
 }
+
+/* ========================================
+   Mobile Responsiveness (Max Width: 768px)
+   ======================================== */
+@media (max-width: 768px) {
+  .app-sidebar {
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+
+  .app-sidebar.sidebar-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 35;
+    backdrop-filter: blur(2px);
+  }
+
+  .app-main {
+    margin-left: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .app-navbar {
+    padding: 0 16px;
+  }
+
+  .app-content {
+    padding: 16px;
+  }
+
+  /* Make tables scrollable horizontally */
+  .table-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  table.table {
+    white-space: nowrap;
+  }
+
+  /* Adjust page headers */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  
+  .page-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  /* Adjust modals */
+  .modal {
+    width: 95%;
+    padding: 20px;
+    margin: 10px auto;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+  
+  .modal-actions button {
+    width: 100%;
+  }
+
+  /* Dashboard Grid */
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Hide hamburger icon on desktop, show on mobile */
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--color-text);
+    cursor: pointer;
+    padding: 8px;
+    margin-right: 12px;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-menu-btn {
+    display: none;
+  }
+  .sidebar-overlay {
+    display: none;
+  }
+}
+

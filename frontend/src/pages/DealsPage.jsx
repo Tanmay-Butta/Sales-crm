@@ -119,10 +119,10 @@ export default function DealsPage() {
     const fetchDropdownData = async () => {
       try {
         const [companiesRes, repsRes] = await Promise.all([
-          companiesAPI.getCompanies(),
+          companiesAPI.getCompanies(true), // Fetch ALL companies including archived
           authAPI.getReps()
         ]);
-        setCompanies(companiesRes.data.companies.filter(c => !c.archived_at));
+        setCompanies(companiesRes.data.companies || []);
         setReps(repsRes.data.users || []);
       } catch (err) {
         console.error("Failed to load reference data:", err);
@@ -191,6 +191,14 @@ export default function DealsPage() {
         return [...prev, cid];
       }
     });
+  };
+
+  const handleSelectAllActive = () => {
+    setSelectedCompanyIds(companies.filter(c => !c.archived_at).map(c => c.id));
+  };
+
+  const handleSelectAllArchived = () => {
+    setSelectedCompanyIds(companies.filter(c => c.archived_at).map(c => c.id));
   };
 
   // Reset selected deals when search, filters, viewMode, or page change to avoid accidental "ghost" actions on invisible deals
@@ -854,25 +862,45 @@ export default function DealsPage() {
                   {/* Action row: Select All / Clear Selection */}
                   <div style={{
                     display: 'flex',
+                    flexWrap: 'wrap',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 12px',
+                    gap: '4px',
+                    padding: '8px 10px',
                     borderBottom: '1px solid var(--color-border)',
                     background: 'var(--color-bg-tertiary)',
-                    fontSize: '0.75rem'
                   }}>
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      style={{ padding: '2px 6px', fontSize: '0.75rem', color: 'var(--color-primary-light)' }}
-                      onClick={() => setSelectedCompanyIds(companies.map(c => c.id))}
+                      style={{ padding: '2px 6px', fontSize: '0.7rem', color: 'var(--color-primary-light)' }}
+                      onClick={handleSelectAllActive}
+                      title="Select all active companies"
                     >
-                      Select All ({companies.length})
+                      All Active
                     </button>
                     <button
                       type="button"
+                      className="btn btn-ghost"
+                      style={{ padding: '2px 6px', fontSize: '0.7rem', color: 'var(--color-primary-light)' }}
+                      onClick={handleSelectAllArchived}
+                      title="Select all archived companies"
+                    >
+                      All Archived
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ padding: '2px 6px', fontSize: '0.7rem', color: 'var(--color-primary-light)' }}
+                      onClick={() => setSelectedCompanyIds(companies.map(c => c.id))}
+                      title="Select every company"
+                    >
+                      All ({companies.length})
+                    </button>
+                    <div style={{ flex: 1 }}></div>
+                    <button
+                      type="button"
                       className="btn btn-ghost text-muted"
-                      style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                      style={{ padding: '2px 6px', fontSize: '0.7rem' }}
                       onClick={() => setSelectedCompanyIds([])}
                     >
                       Clear
@@ -918,9 +946,20 @@ export default function DealsPage() {
                                 flex: 1,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
+                                whiteSpace: 'nowrap',
+                                color: comp.archived_at ? 'var(--color-text-muted)' : 'inherit'
                               }}>
                                 {comp.name}
+                                {comp.archived_at && (
+                                  <span style={{ 
+                                    fontSize: '0.65rem', 
+                                    marginLeft: '6px', 
+                                    background: 'rgba(255,255,255,0.1)', 
+                                    padding: '2px 4px', 
+                                    borderRadius: '4px',
+                                    fontWeight: 500
+                                  }}>Archived</span>
+                                )}
                               </span>
                             </div>
                           );

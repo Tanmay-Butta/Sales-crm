@@ -158,3 +158,33 @@ def get_my_deals_query(user):
             Deal.id.in_(collaborating_deal_ids)
         )
     )
+
+
+def apply_view_mode_filter(query, user, view_mode):
+    """
+    Applies the view_mode filter to an existing deals query.
+    Used for server-side view tabs (My Deals vs Via Company).
+    Centralizes this logic so it can be reused by both pagination and CSV export.
+    """
+    if user.role != Roles.SALES_REP or not view_mode:
+        return query
+
+    clean_view_mode = view_mode.lower().strip()
+    collaborating_deal_ids = db.session.query(DealCollaborator.deal_id).filter_by(user_id=user.id)
+
+    if clean_view_mode == 'my_deals':
+        return query.filter(
+            db.or_(
+                Deal.owner_id == user.id,
+                Deal.id.in_(collaborating_deal_ids)
+            )
+        )
+    elif clean_view_mode == 'via_company':
+        owned_company_ids = db.session.query(Company.id).filter_by(owner_id=user.id)
+        return query.filter(
+            Deal.company_id.in_(owned_company_ids),
+            Deal.owner_id != user.id,
+            ~Deal.id.in_(collaborating_deal_ids)
+        )
+
+    return query
