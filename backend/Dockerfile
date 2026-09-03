@@ -18,5 +18,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Run with Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "120", "wsgi:app"]
+# Run with Gunicorn (bind to Cloud Run PORT, 2 workers with 8 threads each for concurrent requests)
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 8 --timeout 120 wsgi:app"]

@@ -20,13 +20,11 @@ The frontend can hide actions the user should not normally perform, but the back
 
 ## Where does each piece run?
 
-The frontend runs in the browser and can be deployed as static files on Vercel.
+* **Frontend:** The client runs in the browser as a Single-Page Application (SPA) built with React and Vite, hosted on Vercel. Requests to the API are directed via the environment-configured `VITE_API_URL`.
+* **Backend:** The Flask REST API is containerized with a production Dockerfile and deployed as a serverless container on **Google Cloud Run** in region `asia-south1`. Images are built automatically via **Google Cloud Build** and stored in Google Artifact Registry. In production, requests are handled by Gunicorn workers dynamically bound to Cloud Run's `$PORT`.
+* **Database:** Production data lives on a managed **Supabase PostgreSQL** instance, connected over secure SSL. Database schemas, indexes, and constraints are maintained through versioned Alembic migrations (`flask db upgrade`).
 
-The Flask backend runs as a server process and can be deployed behind Gunicorn.
-
-PostgreSQL runs locally during development and can use a managed PostgreSQL service in production.
-
-I kept the infrastructure simple because the expected team is small and the main complexity is in the business rules.
+I chose this serverless and managed stack because it provides high availability, automatic HTTPS, scale-to-zero efficiency (staying within free tiers), and zero database server maintenance, allowing the focus to remain on enforcing business rules.
 
 ## What is the request path for one representative user action?
 

@@ -296,3 +296,34 @@ def dismiss_alert(current_user, deal_id):
 ```
 This kept `visibility_service.py` clean, eliminated duplicate code, and ensured all deal access checks continue to flow through the same centralized `get_deal` service method.
 
+---
+
+## 8. Cloud Deployment: Docker Packaging & Cloud Run
+
+### The Pre-Story Plan & Context
+For production deployment, I planned to containerize the backend and deploy it to **Google Cloud Run** using **Cloud Build**, while migrating our local testing data over to **Supabase Managed PostgreSQL**. I instructed the AI to prepare the necessary `Dockerfile` and deployment scripts to assist with this process.
+
+### Prompt Sequence
+```text
+I am deploying the backend to Google Cloud Run. Generate the Dockerfile and the gcloud deployment commands.
+```
+
+After the AI provided the initial files, I noticed critical flaws in its approach and corrected it:
+```text
+Your Dockerfile is wrong. You hardcoded the port to 8080 instead of using the $PORT env variable that Cloud Run injects. Also, you didn't create a .dockerignore file, which means Cloud Build is going to upload my entire Windows venv/ folder into the Linux container. Fix these.
+```
+
+Then I directed the database migration:
+```text
+Now that the container is fixed, write a Python script to extract all my local SQLite testing data (users, companies, deals) and push it directly into my new Supabase PostgreSQL instance so we don't start with an empty database.
+```
+
+### What AI Generated & What Was Caught
+1. **Flawed Dockerfile:** The AI initially generated a simplistic `Dockerfile` with a hardcoded port (`CMD ["gunicorn", "--bind", "0.0.0.0:8080", ...]`). This would fail on Cloud Run, which requires listening on the dynamically injected `$PORT`.
+2. **Missing `.dockerignore`:** The AI completely forgot to generate a `.dockerignore` file. If I had blindly run its deployment command, it would have packaged the massive `venv/` directory and Windows binaries into the Linux container, bloating the image and causing deployment failures.
+
+### What was Wrong & What I Corrected
+- **Dynamic Port Binding:** I corrected the AI and forced it to update the `Dockerfile` to use runtime port binding: `CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120 wsgi:app"]`.
+- **Added `.dockerignore`:** I instructed the AI to generate a proper `backend/.dockerignore` to strictly exclude `venv/`, `__pycache__/`, and local SQLite files.
+- **Data Sync & Deployment:** After correcting the AI's deployment files, I successfully executed the database sync script to push the local testing state (58 deals, 30 collaborators) into Supabase. I then ran the corrected `gcloud run deploy` command to push the container to `asia-south1`, verifying the live HTTPS URL.
+

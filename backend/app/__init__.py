@@ -4,7 +4,9 @@ Creates and configures the Flask app with all extensions, middleware, and routes
 """
 
 import os
-from flask import Flask
+from flask import Flask, request
+import time
+import logging
 
 from app.config import config_by_name
 from app.extensions import db, migrate, jwt, cors
@@ -24,6 +26,26 @@ def create_app(config_name=None):
 
     flask_app = Flask(__name__)
     flask_app.config.from_object(config_by_name[config_name])
+
+    # Configure structured server logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] %(levelname)s: %(message)s'
+    )
+    logger = logging.getLogger('sales_crm')
+
+    @flask_app.before_request
+    def log_incoming_request():
+        request._start_time = time.time()
+        logger.info(f" [REQ] {request.method} {request.path}")
+
+    @flask_app.after_request
+    def log_outgoing_response(response):
+        duration_ms = 0
+        if hasattr(request, '_start_time'):
+            duration_ms = (time.time() - request._start_time) * 1000
+        logger.info(f" [RES {response.status_code}] {request.method} {request.path} ({duration_ms:.1f}ms)")
+        return response
 
     # Initialize extensions
     db.init_app(flask_app)

@@ -9,6 +9,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { dealsAPI } from "../api/deals";
 import { companiesAPI } from "../api/companies";
 import { authAPI } from "../api/auth";
+import ShimmerLoader from "../components/common/ShimmerLoader";
 
 export default function MyDealsPage() {
   const { user, isManager } = useAuth();
@@ -351,7 +352,16 @@ export default function MyDealsPage() {
 
       <div className="card table-container" style={{ padding: 0 }}>
         {loading ? (
-          <div className="p-8 text-center text-muted">Loading your deals...</div>
+          <ShimmerLoader
+            type="table"
+            rows={5}
+            messages={[
+              "Connecting to cloud pipeline...",
+              "Filtering your assigned & collaborated deals...",
+              "Validating ownership permissions...",
+              "Almost ready! Rendering your active deals..."
+            ]}
+          />
         ) : deals.length === 0 ? (
           <div className="empty-state">
             <ListTodo size={48} className="text-muted mb-4" />

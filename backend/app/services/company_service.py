@@ -15,11 +15,14 @@ from app.models.user import User
 from app.utils.constants import Roles, ErrorCodes
 from app.utils.exceptions import AuthorizationError, ValidationError, NotFoundError
 
+from sqlalchemy.orm import joinedload
 from app.services import visibility_service
 
 def get_companies(current_user, show_archived=False):
-    """Get all companies visible to the current user."""
-    return visibility_service.get_visible_companies_query(current_user, show_archived).order_by(Company.name).all()
+    """Get all companies visible to the current user, eagerly loading owners."""
+    return visibility_service.get_visible_companies_query(current_user, show_archived).options(
+        joinedload(Company.owner)
+    ).order_by(Company.name).all()
 
 def get_company(current_user, company_id):
     """Get a specific company, checking visibility permissions."""

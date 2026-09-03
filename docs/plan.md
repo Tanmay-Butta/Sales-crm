@@ -109,7 +109,10 @@ The main thing I learned here was that the "small" features were not always actu
   - Actual: **1.5h**
   - What happened: I derived alerts directly from the `deals` table instead of creating an extra database table, which prevented data sync issues. Using `alert_dismissed_for_date = expected_close_date` made dismissal stateless and reliable: if the deal's expected close date is later rescheduled and that new date passes while the deal is still open, the alert naturally returns without needing background cron jobs. Enforced permissions on the backend so only the Deal Owner or a Sales Manager can dismiss (collaborators receive 403 Forbidden). On the frontend, added the active alerts page with quick rescheduling and wired up the navigation sidebar badge so it updates dynamically whenever deals are closed, advanced, or rescheduled.
 
-
+- **Deployment & Production Infrastructure**
+  - Estimated: **1h**
+  - Actual: **1.5h**
+  - What happened: Decided to deploy the backend on Google Cloud Run using Cloud Build for automated container builds, and use a managed Supabase PostgreSQL database for the database layer. First, I ran the database migrations using `flask db upgrade` against the remote Supabase instance to construct the schema, indexes, and database check constraints. Then, instead of starting with a generic blank database, I wrote a sync script to transfer all test records, companies, deals across various stages, collaborators, and complete timeline audit history from my local testing environment directly into Supabase, resetting the primary key sequences afterwards. For Cloud Run, I configured a production Dockerfile with Gunicorn bound to the dynamic `$PORT` and added a `.dockerignore` to prevent uploading local virtual environments. Deployed the service to region `asia-south1` with public HTTPS and verified the `/api/health` and authentication endpoints live against the cloud database.
 
 ---
 

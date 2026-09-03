@@ -1148,3 +1148,70 @@ body {
   .app-sidebar { transform: translateX(-100%); }
   .app-main { margin-left: 0; }
 }
+
+/* ========================================
+   Zomato-Style Shimmer & Dynamic Loader
+   ======================================== */
+@keyframes shimmer-sweep {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 20%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.02) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.5s infinite ease-in-out;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 8px #38bdf8;
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+    box-shadow: 0 0 2px #38bdf8;
+  }
+}
+
+.pulsing-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  animation: pulse-glow 1.2s infinite ease-in-out;
+}
+
+.shimmer-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  backdrop-filter: blur(8px);
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.shimmer-status-text {
+  color: #e2e8f0;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}

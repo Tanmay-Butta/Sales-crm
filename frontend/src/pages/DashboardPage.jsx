@@ -35,6 +35,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { dashboardAPI } from '../api/dashboard';
 import toast from 'react-hot-toast';
+import ShimmerLoader from '../components/common/ShimmerLoader';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -171,11 +172,16 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '380px', gap: '14px' }}>
-        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255, 255, 255, 0.08)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.9s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite' }} />
-        <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>
-          Loading pipeline data...
-        </span>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
+        <ShimmerLoader
+          type="cards"
+          messages={[
+            'Connecting to analytics engine...',
+            'Calculating open deals and weighted pipeline value...',
+            'Aggregating stage distribution & owner performance...',
+            'Almost ready! Assembling executive dashboard...'
+          ]}
+        />
       </div>
     );
   }
