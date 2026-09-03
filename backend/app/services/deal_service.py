@@ -225,6 +225,8 @@ def create_deal(current_user, data):
 
     # Manager vs Rep owner assignment
     if current_user.role == Roles.SALES_REP:
+        if 'owner_id' in data and data['owner_id'] and int(data['owner_id']) != current_user.id:
+            raise AuthorizationError("Sales Reps cannot create deals for other users")
         data['owner_id'] = current_user.id
     else:
         if 'owner_id' not in data or not data['owner_id']:

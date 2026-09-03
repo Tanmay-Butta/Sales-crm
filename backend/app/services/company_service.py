@@ -81,6 +81,8 @@ def create_company(current_user, data):
     _check_duplicate_name(name, current_user, allow_duplicate=allow_duplicate)
 
     if current_user.role == Roles.SALES_REP:
+        if 'owner_id' in data and data['owner_id'] and int(data['owner_id']) != current_user.id:
+            raise AuthorizationError("Sales Reps cannot create companies for other users")
         data['owner_id'] = current_user.id
     else:
         if 'owner_id' not in data or not data['owner_id']:
