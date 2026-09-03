@@ -4,6 +4,7 @@ All dates calculated with Indian Standard Time (IST, UTC+05:30).
 """
 
 from datetime import datetime, timezone, timedelta, date
+from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.models.deal import Deal
 from app.utils.constants import Roles, ErrorCodes, Stages
@@ -36,6 +37,9 @@ def get_active_alerts_query(current_user):
             Deal.alert_dismissed_for_date.is_(None),
             Deal.alert_dismissed_for_date != Deal.expected_close_date
         )
+    ).options(
+        joinedload(Deal.company),
+        joinedload(Deal.owner)
     ).order_by(Deal.expected_close_date.asc())
 
 

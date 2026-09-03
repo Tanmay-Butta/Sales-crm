@@ -12,6 +12,7 @@ def _parse_date(d):
     if isinstance(d, str):
         return date.fromisoformat(d)
     return d
+from sqlalchemy.orm import joinedload, selectinload
 from app.extensions import db
 from app.models.deal import Deal
 from app.models.deal_collaborator import DealCollaborator
@@ -154,6 +155,14 @@ def get_deals_paginated(
     total = query.count()
     pages = math.ceil(total / per_page) if total > 0 else 1
     offset = (page - 1) * per_page
+    
+    # Eager load relationships to prevent N+1 queries during serialization
+    query = query.options(
+        joinedload(Deal.company),
+        joinedload(Deal.owner),
+        selectinload(Deal.collaborators)
+    )
+    
     deals = query.offset(offset).limit(per_page).all()
 
     return {
@@ -166,8 +175,12 @@ def get_deals_paginated(
 
 
 def get_my_deals(current_user):
-    """Get deals where current user is owner OR collaborator ONLY (spec §5 My Deals)."""
-    return visibility_service.get_my_deals_query(current_user).order_by(Deal.expected_close_date.desc()).all()
+    query = visibility_service.get_my_deals_query(current_user)
+    return query.options(
+        joinedload(Deal.company),
+        joinedload(Deal.owner),
+        selectinload(Deal.collaborators)
+    ).order_by(Deal.expected_close_date.desc()).all()
 
 
 def get_deal(current_user, deal_id):

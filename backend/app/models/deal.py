@@ -44,7 +44,7 @@ class Deal(db.Model):
 
     # Relationships
     collaborators = db.relationship(
-        'DealCollaborator', backref='deal', lazy='dynamic',
+        'DealCollaborator', backref='deal', lazy=True,
         cascade='all, delete-orphan',
     )
     history = db.relationship(
@@ -120,7 +120,7 @@ class Deal(db.Model):
                     'added_by': dc.added_by,
                     'added_at': dc.created_at.isoformat() if dc.created_at else None,
                 }
-                for dc in self.collaborators.all()
+                for dc in self.collaborators
                 if dc.user
             ]
         return data
