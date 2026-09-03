@@ -10,6 +10,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { dealsAPI } from "../api/deals";
 import { companiesAPI } from "../api/companies";
 import { authAPI } from "../api/auth";
+import ShimmerLoader from "../components/common/ShimmerLoader";
 
 export default function DealsPage() {
   const { user, isManager } = useAuth();
@@ -1058,10 +1059,16 @@ export default function DealsPage() {
       {/* Table Container */}
       <div className="card table-container" style={{ padding: 0 }}>
         {loading ? (
-          <div className="p-8 text-center text-muted" style={{ padding: '60px 20px' }}>
-            <div style={{ display: 'inline-block', width: '28px', height: '28px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
-            <p>Fetching deals from server...</p>
-          </div>
+          <ShimmerLoader
+            type="table"
+            rows={6}
+            messages={[
+              "Connecting to cloud database...",
+              "Fetching deals pipeline & active records...",
+              "Applying permissions and stage filters...",
+              "Almost ready! Rendering your pipeline..."
+            ]}
+          />
         ) : deals.length === 0 ? (
           <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
             <Handshake size={48} className="text-muted mb-4" style={{ margin: '0 auto 16px', opacity: 0.6 }} />

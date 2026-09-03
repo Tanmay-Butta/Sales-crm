@@ -37,6 +37,7 @@ import { alertsAPI } from '../api/alerts';
 import { dealsAPI } from '../api/deals';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import ShimmerLoader from '../components/common/ShimmerLoader';
 
 export default function AlertsPage() {
   const { user } = useAuth();
@@ -202,11 +203,16 @@ export default function AlertsPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '340px', gap: '12px' }}>
-        <div style={{ width: '38px', height: '38px', border: '3px solid rgba(255, 255, 255, 0.08)', borderTopColor: '#f87171', borderRadius: '50%', animation: 'spin 0.9s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite' }} />
-        <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontWeight: 500 }}>
-          Scanning pipeline for past-due opportunities...
-        </span>
+      <div className="dashboard-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <ShimmerLoader
+          type="alerts"
+          messages={[
+            'Scanning pipeline for overdue opportunities...',
+            'Evaluating close dates against Indian Standard Time...',
+            'Filtering dismissal statuses for your account...',
+            'Almost ready! Organizing past-due action items...'
+          ]}
+        />
       </div>
     );
   }

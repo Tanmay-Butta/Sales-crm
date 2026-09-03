@@ -3,44 +3,52 @@
  * Wraps all authenticated pages with dynamic past-due alert count badge syncing.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { useAuth } from '../../contexts/AuthContext';
 import { alertsAPI } from '../../api/alerts';
 
 export default function AppLayout() {
   const { user } = useAuth();
-  const location = useLocation();
   const [alertCount, setAlertCount] = useState(0);
+  const lastFetchRef = useRef(0);
 
   const fetchAlertCount = useCallback(async () => {
     if (!user) return;
+    const now = Date.now();
+    // Throttle to at most once per 2 seconds to prevent burst requests
+    if (now - lastFetchRef.current < 2000) return;
+    lastFetchRef.current = now;
+
     try {
       const res = await alertsAPI.getAlertsCount();
       setAlertCount(res.data.count || 0);
     } catch (err) {
       console.error('[Alerts Count Error]', err);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
-    fetchAlertCount();
+    if (!user) return;
+
+    // Defer initial alert count fetch by 800ms so important page content
+    // (Deals, Dashboard, Companies) fires first and renders immediately
+    const initialTimer = setTimeout(() => {
+      fetchAlertCount();
+    }, 800);
 
     // Listen for custom broadcast events across pages (deal state changes, dismissals, etc.)
     const handleSync = () => fetchAlertCount();
     window.addEventListener('deals-updated', handleSync);
     window.addEventListener('alerts-updated', handleSync);
 
-    // Periodic check every 30s
-    const interval = setInterval(fetchAlertCount, 30000);
-
     return () => {
+      clearTimeout(initialTimer);
       window.removeEventListener('deals-updated', handleSync);
       window.removeEventListener('alerts-updated', handleSync);
-      clearInterval(interval);
     };
-  }, [fetchAlertCount, location.pathname]);
+  }, [user?.id, fetchAlertCount]);
 
   return (
     <div className="app-layout">

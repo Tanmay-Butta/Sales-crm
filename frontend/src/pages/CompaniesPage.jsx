@@ -1,9 +1,10 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { Building2, Plus, Edit2, Archive, RotateCcw, Link as LinkIcon, AlertCircle, ChevronDown, ChevronRight, User as UserIcon, Users, Handshake } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { companiesAPI } from '../api/companies';
 import { authAPI } from '../api/auth';
+import ShimmerLoader from '../components/common/ShimmerLoader';
 
 export default function CompaniesPage() {
   const { user, isManager } = useAuth();
@@ -13,6 +14,7 @@ export default function CompaniesPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [filterMode, setFilterMode] = useState('ALL'); // 'ALL' | 'OWNED' | 'VIA_DEALS'
   
+  const isFetchingRef = useRef(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [expandedCompanyId, setExpandedCompanyId] = useState(null);
@@ -26,11 +28,9 @@ export default function CompaniesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
 
-  useEffect(() => {
-    fetchData();
-  }, [showArchived, isManager]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setLoading(true);
     try {
       const [companiesRes, repsRes] = await Promise.all([
@@ -43,8 +43,13 @@ export default function CompaniesPage() {
       toast.error("Failed to load companies");
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  };
+  }, [showArchived, isManager]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const openCreateModal = () => {
     setEditingCompany(null);
@@ -243,7 +248,16 @@ export default function CompaniesPage() {
       )}
 
       {loading ? (
-        <div className="loading-page"><div className="spinner" /></div>
+        <ShimmerLoader
+          type="table"
+          rows={5}
+          messages={[
+            'Connecting to accounts database...',
+            'Fetching company directories & owners...',
+            'Calculating active and archived accounts...',
+            'Almost ready! Assembling companies list...'
+          ]}
+        />
       ) : filteredCompanies.length === 0 ? (
         <div className="empty-state">
           <Building2 size={48} className="empty-state-icon" />
