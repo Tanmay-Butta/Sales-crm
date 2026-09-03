@@ -33,7 +33,7 @@ class Config:
     JWT_HEADER_TYPE = 'Bearer'
 
     # CORS
-    FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+    FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://busy-sales-crm.vercel.app,http://localhost:5173')
 
 
 class DevelopmentConfig(Config):

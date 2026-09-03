@@ -54,23 +54,7 @@ def get_deals_paginated(
     query = visibility_service.get_visible_deals_query(current_user)
 
     # 2. View mode filtering (Server-side view tabs for Reps)
-    if current_user.role == Roles.SALES_REP and view_mode:
-        clean_view_mode = view_mode.lower().strip()
-        collaborating_deal_ids = db.session.query(DealCollaborator.deal_id).filter_by(user_id=current_user.id)
-        if clean_view_mode == 'my_deals':
-            query = query.filter(
-                db.or_(
-                    Deal.owner_id == current_user.id,
-                    Deal.id.in_(collaborating_deal_ids)
-                )
-            )
-        elif clean_view_mode == 'via_company':
-            owned_company_ids = db.session.query(Company.id).filter_by(owner_id=current_user.id)
-            query = query.filter(
-                Deal.company_id.in_(owned_company_ids),
-                Deal.owner_id != current_user.id,
-                ~Deal.id.in_(collaborating_deal_ids)
-            )
+    query = visibility_service.apply_view_mode_filter(query, current_user, view_mode)
 
     # 3. Company Filter (single ID or multiple IDs comma-separated / list)
     if company_id:
@@ -1018,24 +1002,7 @@ def export_pipeline_csv(current_user, search=None, company_id=None, stage=None, 
     query = visibility_service.get_visible_deals_query(current_user)
 
     # 2. View Mode handling for Sales Reps
-    if current_user.role == Roles.SALES_REP and view_mode:
-        clean_view_mode = view_mode.strip().lower()
-        collaborating_deal_ids = db.session.query(DealCollaborator.deal_id).filter_by(user_id=current_user.id)
-
-        if clean_view_mode == 'my_deals':
-            query = query.filter(
-                db.or_(
-                    Deal.owner_id == current_user.id,
-                    Deal.id.in_(collaborating_deal_ids)
-                )
-            )
-        elif clean_view_mode == 'via_company':
-            owned_company_ids = db.session.query(Company.id).filter_by(owner_id=current_user.id)
-            query = query.filter(
-                Deal.company_id.in_(owned_company_ids),
-                Deal.owner_id != current_user.id,
-                ~Deal.id.in_(collaborating_deal_ids)
-            )
+    query = visibility_service.apply_view_mode_filter(query, current_user, view_mode)
 
     # 3. Company Filter (single ID or multiple IDs comma-separated / list)
     if company_id:

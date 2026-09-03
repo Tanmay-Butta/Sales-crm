@@ -51,9 +51,15 @@ def create_app(config_name=None):
     db.init_app(flask_app)
     migrate.init_app(flask_app, db)
     jwt.init_app(flask_app)
+    
+    # Parse FRONTEND_URL into a list if it's a comma-separated string
+    allowed_origins = flask_app.config.get('FRONTEND_URL', '*')
+    if ',' in allowed_origins:
+        allowed_origins = [o.strip() for o in allowed_origins.split(',')]
+
     cors.init_app(flask_app, resources={
         r"/api/*": {
-            "origins": flask_app.config.get('FRONTEND_URL', '*'),
+            "origins": allowed_origins,
             "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
         }

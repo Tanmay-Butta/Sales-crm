@@ -86,6 +86,11 @@ one entry must be a decision you later reversed — say what changed your mind.
 
   The reason for storing the dismissed date instead of a simple true/false flag comes down to the requirement in Goal 10: *if the close date changes and that new date passes again, the alert must return*. If you just flip a boolean flag to "dismissed", the system will never alert you again even if the deal is pushed back and missed a second time. By remembering *which* date was dismissed (e.g. Aug 15), if the rep later moves the date to Aug 25 and that date also passes, the system immediately notices that Aug 25 hasn't been dismissed yet and brings the alert right back. It's clean, simple, and avoids having to manage background timers or extra database tables.
 
+## Decision 14: DRY Refactoring of View Mode Filtering
+- **Chose:** Centralizing the `view_mode` filtering logic (for 'my_deals' vs 'via_company' tabs) into a reusable `apply_view_mode_filter` helper inside `visibility_service.py`.
+- **Rejected:** Leaving the identical 17-line `if/elif` logic copy-pasted across both `get_deals_paginated` (for the frontend table) and `export_pipeline_csv` (for CSV downloads) in `deal_service.py`.
+- **Why:** Centralizing business logic (DRY principle: Don't Repeat Yourself) prevents dangerous drift. If the rules for what constitutes "My Deals" were to change in the future, leaving the logic duplicated would risk a developer updating one endpoint but forgetting the other. This would lead to a classic enterprise bug where the UI shows one set of deals but the CSV export contains a different set of deals. Moving this logic to `visibility_service.py` also respects separation of concerns, keeping all access-level filtering in one dedicated service module.
+
 ---
 
 ### Assumptions & Business Rules
