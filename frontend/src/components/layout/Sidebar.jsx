@@ -11,9 +11,10 @@ import {
   ListTodo,
   Bell,
   LogOut,
+  X
 } from 'lucide-react';
 
-export default function Sidebar({ alertCount = 0 }) {
+export default function Sidebar({ alertCount = 0, isOpen = false, setIsOpen = () => {} }) {
   const { user, isManager, logout } = useAuth();
 
   const initials = user?.full_name
@@ -24,11 +25,20 @@ export default function Sidebar({ alertCount = 0 }) {
     .slice(0, 2) || '?';
 
   return (
-    <aside className="app-sidebar">
+    <aside className={`app-sidebar ${isOpen ? 'sidebar-open' : ''}`}>
       {/* Logo */}
-      <div className="sidebar-logo">
-        <h1>Sales CRM</h1>
-        <span>Pipeline Management</span>
+      <div className="sidebar-logo" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>Sales CRM</h1>
+          <span>Pipeline Management</span>
+        </div>
+        <button 
+          className="mobile-menu-btn" 
+          onClick={() => setIsOpen(false)}
+          style={{ margin: 0, padding: '4px' }}
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -38,6 +48,7 @@ export default function Sidebar({ alertCount = 0 }) {
         <NavLink
           to="/"
           end
+          onClick={() => setIsOpen(false)}
           className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
         >
           <LayoutDashboard size={18} />
@@ -46,6 +57,7 @@ export default function Sidebar({ alertCount = 0 }) {
 
         <NavLink
           to="/companies"
+          onClick={() => setIsOpen(false)}
           className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
         >
           <Building2 size={18} />
@@ -54,6 +66,7 @@ export default function Sidebar({ alertCount = 0 }) {
 
         <NavLink
           to="/deals"
+          onClick={() => setIsOpen(false)}
           className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
         >
           <Handshake size={18} />
@@ -63,6 +76,7 @@ export default function Sidebar({ alertCount = 0 }) {
         {!isManager && (
           <NavLink
             to="/my-deals"
+            onClick={() => setIsOpen(false)}
             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
           >
             <ListTodo size={18} />
@@ -74,6 +88,7 @@ export default function Sidebar({ alertCount = 0 }) {
 
         <NavLink
           to="/alerts"
+          onClick={() => setIsOpen(false)}
           className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
         >
           <Bell size={18} />
