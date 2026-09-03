@@ -126,8 +126,8 @@ export default function MyDealsPage() {
       payload.company_id = parseInt(payload.company_id, 10);
       payload.value = parseFloat(payload.value);
       
-      if (!isManager) delete payload.owner_id;
-      else if (payload.owner_id) payload.owner_id = parseInt(payload.owner_id, 10);
+      // if (!isManager) delete payload.owner_id;
+      if (payload.owner_id) payload.owner_id = parseInt(payload.owner_id, 10);
 
       if (editingDeal) {
         const updatePayload = {
@@ -135,7 +135,7 @@ export default function MyDealsPage() {
           value: payload.value,
           expected_close_date: payload.expected_close_date
         };
-        if (isManager && payload.owner_id) {
+        if (payload.owner_id) {
           updatePayload.owner_id = payload.owner_id;
         }
         await dealsAPI.updateDeal(editingDeal.id, updatePayload);
@@ -389,8 +389,8 @@ export default function MyDealsPage() {
               {deals.map(deal => {
                 const isOwner = deal.owner_id === user.id;
                 const isCollab = deal.collaborators?.some(c => c.id === user.id);
-                const canManageCollabs = isManager || isOwner;
-                const canDelete = isManager || isOwner;
+                const canManageCollabs = true;
+                const canDelete = true;
 
                 return (
                   <tr key={deal.id}>
@@ -652,7 +652,7 @@ export default function MyDealsPage() {
                   </div>
                 )}
                 
-                {isManager && (
+                {true && (
                   <div className="form-group">
                     <label className="form-label">Assign Sales Rep Owner *</label>
                     <select

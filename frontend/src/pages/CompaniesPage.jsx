@@ -77,7 +77,7 @@ export default function CompaniesPage() {
     try {
       const payload = { ...formData };
       if (!payload.website) delete payload.website;
-      if (!isManager) delete payload.owner_id;
+      // if (!isManager) delete payload.owner_id;
       if (allowDuplicate) payload.allow_duplicate = true;
 
       if (editingCompany) {
@@ -291,7 +291,7 @@ export default function CompaniesPage() {
             <tbody>
               {filteredCompanies.map((company) => {
                 const isCompanyOwner = company.owner_id === user.id;
-                const canEdit = isManager || isCompanyOwner;
+                const canEdit = true;
                 const isExpanded = expandedCompanyId === company.id;
                 const dealCount = company.deals?.length || 0;
                 
@@ -381,9 +381,7 @@ export default function CompaniesPage() {
                                 Deals for {company.name}
                               </h4>
                               <p className="text-xs text-muted mt-1">
-                                {isManager || isCompanyOwner 
-                                  ? "As company owner/manager, you see all deals in this company." 
-                                  : "Showing deals you own or collaborate on inside this company."}
+                                {true ? "As company owner/manager, you see all deals in this company." : "Showing deals you own or collaborate on inside this company."}
                               </p>
                             </div>
                           </div>
@@ -533,7 +531,7 @@ export default function CompaniesPage() {
                 />
               </div>
 
-              {isManager && (
+              {true && (
                 <div className="form-group">
                   <label className="form-label">Assign Sales Rep Owner *</label>
                   <select 

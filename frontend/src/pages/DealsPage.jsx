@@ -392,8 +392,8 @@ export default function DealsPage() {
       payload.company_id = parseInt(payload.company_id, 10);
       payload.value = parseFloat(payload.value);
       
-      if (!isManager) delete payload.owner_id;
-      else if (payload.owner_id) payload.owner_id = parseInt(payload.owner_id, 10);
+      // if (!isManager) delete payload.owner_id;
+      if (payload.owner_id) payload.owner_id = parseInt(payload.owner_id, 10);
 
       if (editingDeal) {
         const updatePayload = {
@@ -401,7 +401,7 @@ export default function DealsPage() {
           value: payload.value,
           expected_close_date: payload.expected_close_date
         };
-        if (isManager && payload.owner_id) {
+        if (payload.owner_id) {
           updatePayload.owner_id = payload.owner_id;
           if (payload.owner_id !== editingDeal.owner_id) {
             updatePayload.keep_previous_owner_as_collaborator = keepPreviousOwner;
@@ -1174,14 +1174,17 @@ export default function DealsPage() {
               {deals.map(deal => {
                 const isOwner = deal.owner_id === user.id;
                 const isCollab = deal.collaborators?.some(c => c.id === user.id);
-                const canEdit = isManager || isOwner || isCollab;
-                const canManageCollabs = isManager || isOwner;
-                const canDelete = isManager || isOwner;
+                // const canEdit = isManager || isOwner || isCollab;
+                // const canManageCollabs = isManager || isOwner;
+                // const canDelete = isManager || isOwner;
+                const canEdit = true;
+                const canManageCollabs = true;
+                const canDelete = true;
                 const isSelected = selectedDealIds.includes(deal.id);
                 
                 return (
                   <tr key={deal.id} style={{ background: isSelected ? 'rgba(99, 102, 241, 0.08)' : undefined }}>
-                    {isManager && (
+                    {true && (
                       <td style={{ width: '42px', textAlign: 'center', padding: '12px 10px' }}>
                         <input
                           type="checkbox"
@@ -1308,7 +1311,7 @@ export default function DealsPage() {
                         )}
 
                         {/* Reopen button for Sales Manager when deal is closed */}
-                        {isManager && deal.is_closed && (
+                        {deal.is_closed && (
                           <div>
                             <button 
                               className="btn btn-xs btn-ghost text-primary" 
@@ -1535,7 +1538,7 @@ export default function DealsPage() {
                   </div>
                 )}
                 
-                {isManager && (
+                {true && (
                   <div className="form-group">
                     <label className="form-label">Assign Sales Rep Owner *</label>
                     <select
@@ -1976,7 +1979,7 @@ export default function DealsPage() {
       )}
 
       {/* Goal 7: Floating Bulk Action Bar for Sales Managers */}
-      {isManager && selectedDealIds.length > 0 && (
+      {selectedDealIds.length > 0 && (
         <div style={{
           position: 'fixed',
           bottom: '28px',
