@@ -8,7 +8,7 @@ from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.models.deal import Deal
 from app.utils.constants import Roles, ErrorCodes, Stages
-from app.utils.exceptions import AuthorizationError
+from app.utils.exceptions import AuthorizationError, ValidationError
 from app.services import visibility_service, deal_service
 
 
@@ -95,6 +95,11 @@ def dismiss_alert(current_user, deal_id):
     Uses deal_service.get_deal() to enforce deal existence and visibility rules.
     Authorization: Deal primary owner or Sales Manager ONLY.
     Collaborators receive 403 Forbidden.
+    Validation:
+    - Deal must be currently open (not WON/LOST)
+    - Deal must be past due (expected_close_date < today_ist)
+    - Deal must have an active alert (not already dismissed for this expected close date)
+    - Deal must be present in the active alerts query
     """
     deal = deal_service.get_deal(current_user, deal_id)
 
@@ -103,6 +108,37 @@ def dismiss_alert(current_user, deal_id):
         raise AuthorizationError(
             "Only the deal owner or a sales manager can dismiss this alert",
             code=ErrorCodes.NOT_AUTHORIZED
+        )
+
+    today = get_today_ist()
+
+    # 1. Validate deal is open
+    if deal.stage not in Stages.OPEN_ORDERED:
+        raise ValidationError(
+            "Cannot dismiss alert for a closed deal. Only open deals can have past-due alerts.",
+            code=ErrorCodes.DEAL_CLOSED
+        )
+
+    # 2. Validate deal is past due (prevent pre-dismissing future-dated deals)
+    if deal.expected_close_date >= today:
+        raise ValidationError(
+            "Cannot dismiss alert: Deal is not past due. Alerts cannot be pre-dismissed before the expected close date has passed.",
+            code=ErrorCodes.VALIDATION_ERROR
+        )
+
+    # 3. Validate alert is not already dismissed for this expected close date
+    if deal.alert_dismissed_for_date == deal.expected_close_date:
+        raise ValidationError(
+            "Alert for this expected close date has already been dismissed.",
+            code=ErrorCodes.VALIDATION_ERROR
+        )
+
+    # 4. Strict presence check in active alerts query
+    active_alert = get_active_alerts_query(current_user).filter(Deal.id == deal.id).first()
+    if not active_alert:
+        raise ValidationError(
+            "Cannot dismiss alert: Deal does not have an active past-due alert.",
+            code=ErrorCodes.VALIDATION_ERROR
         )
 
     # Set dismissal date to the current expected close date
