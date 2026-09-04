@@ -1,25 +1,25 @@
 """
-Auth routes — register, login, and get current user profile.
+Auth routes — user management, login, and profile.
 """
 
 from flask import Blueprint, request, jsonify
 
-from app.schemas.auth import register_schema, login_schema
+from app.schemas.auth import create_rep_schema, login_schema
 from app.services import auth_service
-from app.middleware.auth import auth_required
+from app.middleware.auth import auth_required, manager_required
+from app.utils.constants import Roles
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
-@auth_bp.route('/register', methods=['POST'])
-def register():
-    """Register a new user account."""
-    data = register_schema.load(request.get_json())
-    user, token = auth_service.register_user(data)
-    return jsonify({
-        'user': user.to_dict(),
-        'access_token': token,
-    }), 201
+@auth_bp.route('/users', methods=['POST'])
+@manager_required
+def create_rep(current_user):
+    """Create a new sales rep account (Manager-only)."""
+    data = create_rep_schema.load(request.get_json())
+    data['role'] = Roles.SALES_REP
+    user, _ = auth_service.register_user(data)
+    return jsonify({'user': user.to_dict()}), 201
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -49,8 +49,8 @@ def get_reps(current_user):
 
 
 @auth_bp.route('/users', methods=['GET'])
-@auth_required
+@manager_required
 def get_users(current_user):
-    """Get all users (for admin views)."""
+    """Get all users (for admin views, manager-only)."""
     users = auth_service.get_all_users()
     return jsonify({'users': [u.to_dict() for u in users]}), 200

@@ -1,11 +1,10 @@
-"""
-Auth validation schemas using Marshmallow.
-"""
-
-from marshmallow import Schema, fields, validate
+from marshmallow import Schema, fields, validate, RAISE
 
 
-class RegisterSchema(Schema):
+class CreateRepSchema(Schema):
+    class Meta:
+        unknown = RAISE
+
     email = fields.Email(required=True)
     password = fields.String(
         required=True,
@@ -15,10 +14,6 @@ class RegisterSchema(Schema):
         required=True,
         validate=validate.Length(min=1, max=255),
     )
-    role = fields.String(
-        required=True,
-        validate=validate.OneOf(['SALES_MANAGER', 'SALES_REP']),
-    )
 
 
 class LoginSchema(Schema):
@@ -26,5 +21,5 @@ class LoginSchema(Schema):
     password = fields.String(required=True)
 
 
-register_schema = RegisterSchema()
+create_rep_schema = CreateRepSchema()
 login_schema = LoginSchema()
