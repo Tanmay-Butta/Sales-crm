@@ -303,6 +303,48 @@ export default function MyDealsPage() {
     }
   };
 
+  // Reopen Deal Handler (for testing manager vs rep authorization)
+  const handleReopenDeal = async (deal) => {
+    const prev = deal.previous_stage || 'Negotiation';
+    if (!window.confirm(`Reopen "${deal.title}"? It will restore to its pre-close stage (${prev}).`)) return;
+    try {
+      await dealsAPI.reopenDeal(deal.id);
+      toast.success(`Deal reopened to ${prev}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to reopen deal");
+    }
+  };
+
+  // Dropdown Stage Selection Change Handler
+  const handleStageSelectChange = async (deal, targetStage) => {
+    if (!targetStage || targetStage === deal.stage) return;
+
+    if (targetStage === 'REOPEN') {
+      handleReopenDeal(deal);
+      return;
+    }
+
+    // Check if target is a backward open stage - open modal to collect reason
+    const stageOrder = ['NEW', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION'];
+    const currentIdx = stageOrder.indexOf(deal.stage);
+    const targetIdx = stageOrder.indexOf(targetStage);
+
+    if (currentIdx !== -1 && targetIdx !== -1 && targetIdx < currentIdx) {
+      openBackwardModal(deal, targetStage);
+      return;
+    }
+
+    // Direct transition attempt (backend strictly validates forward 1-step, closing rules, and closed deals)
+    try {
+      await dealsAPI.changeStage(deal.id, targetStage);
+      toast.success(`Deal moved to ${targetStage}`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to update deal stage");
+    }
+  };
+
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -431,92 +473,31 @@ export default function MyDealsPage() {
                           )}
                         </div>
 
-                        {/* Quick Lifecycle Stage Transition Actions for Rep */}
-                        {!deal.is_closed && (
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {deal.stage === 'NEW' && (
-                              <button 
-                                className="btn btn-xs btn-primary" 
-                                style={{ padding: '2px 8px', fontSize: '11px' }}
-                                onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
-                                title="Advance to Qualified"
-                              >
-                                Advance <ArrowRight size={12} />
-                              </button>
-                            )}
-
-                            {deal.stage === 'QUALIFIED' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'NEW'); }}
-                                  title="Move back to New (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
-                                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'PROPOSAL'); }}
-                                  title="Advance to Proposal"
-                                >
-                                  Advance <ArrowRight size={12} />
-                                </button>
-                              </>
-                            )}
-
-                            {deal.stage === 'PROPOSAL' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'QUALIFIED'); }}
-                                  title="Move back to Qualified (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
-                                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'NEGOTIATION'); }}
-                                  title="Advance to Negotiation"
-                                >
-                                  Advance <ArrowRight size={12} />
-                                </button>
-                              </>
-                            )}
-
-                            {deal.stage === 'NEGOTIATION' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'PROPOSAL'); }}
-                                  title="Move back to Proposal (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs" 
-                                  style={{ background: '#10b981', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
-                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'WON'); }}
-                                  title="Mark deal Won"
-                                >
-                                  <CheckCircle2 size={12} /> Won
-                                </button>
-                                <button 
-                                  className="btn btn-xs" 
-                                  style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
-                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'LOST'); }}
-                                  title="Mark deal Lost"
-                                >
-                                  <XCircle size={12} /> Lost
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
+                        {/* Interactive Stage Dropdown */}
+                        <select
+                          className="form-select"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.8rem',
+                            borderRadius: '6px',
+                            background: 'var(--color-bg)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text)',
+                            cursor: 'pointer',
+                            width: '100%'
+                          }}
+                          value={deal.stage}
+                          onChange={(e) => handleStageSelectChange(deal, e.target.value)}
+                          title="Select target stage to advance, step back, close, or test transition rules"
+                        >
+                          <option value="NEW">NEW (10%)</option>
+                          <option value="QUALIFIED">QUALIFIED (25%)</option>
+                          <option value="PROPOSAL">PROPOSAL (50%)</option>
+                          <option value="NEGOTIATION">NEGOTIATION (75%)</option>
+                          <option value="WON">🏆 WON (100%)</option>
+                          <option value="LOST">❌ LOST (0%)</option>
+                          <option value="REOPEN">🔄 Reopen Deal</option>
+                        </select>
                       </div>
                     </td>
                     <td>
