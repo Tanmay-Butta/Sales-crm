@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { 
+  ListTodo, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, X, UserPlus, Trash,
   ArrowRight, ArrowLeft, CheckCircle2, XCircle, Lock, RotateCcw, MessageSquare, Sparkles, UserCheck, UserMinus, Loader2
 } from "lucide-react";
 import toast from "react-hot-toast";
