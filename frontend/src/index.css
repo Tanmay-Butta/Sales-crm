@@ -768,13 +768,13 @@ body {
 }
 
 .badge-orange {
-  background: rgba(249, 115, 22, 0.15);
-  color: #fb923c;
+  background: rgba(249, 115, 22, 0.1);
+  color: #fdba74;
 }
 
 .badge-yellow {
-  background: rgba(234, 179, 8, 0.15);
-  color: #facc15;
+  background: rgba(234, 179, 8, 0.1);
+  color: #fbbf24;
 }
 
 .badge-red {

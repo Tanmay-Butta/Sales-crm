@@ -469,7 +469,7 @@ export default function CompaniesPage() {
                   padding: '12px 14px',
                   marginBottom: '16px'
                 }}>
-                  <div style={{ color: '#facc15', fontWeight: 600, fontSize: '0.85rem', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ color: '#fbbf24', fontWeight: 600, fontSize: '0.85rem', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <AlertCircle size={16} /> Duplicate Company Account
                   </div>
                   <p className="text-xs" style={{ color: 'var(--color-text-secondary)', margin: '0 0 10px 0', lineHeight: 1.4 }}>

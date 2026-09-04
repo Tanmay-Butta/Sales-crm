@@ -145,7 +145,7 @@ Charlie is therefore collaborating on multiple deals, which is why a simple `use
 
 ---
 
-## Which constraints are enforced by the database, and which by application code?
+## Which constraints are enforced by the database, and which by application code — and why did you draw the line there?
 
 I tried to keep a clear separation here.
 
@@ -192,7 +192,7 @@ I found it much easier to keep this logic in one place instead of spreading it a
 
 ---
 
-## What did I deliberately denormalise?
+## What did you deliberately denormalise?
 
 There are a few places where I intentionally stored information that could technically be calculated or reconstructed somewhere else.
 
@@ -204,7 +204,6 @@ Without this, reopening a deal would require looking through its history to find
 
 With it, reopening is simple:
 
-```text
 Negotiation → Won
 
 previous_stage = Negotiation
@@ -212,7 +211,6 @@ previous_stage = Negotiation
 Manager reopens
 
 Won → Negotiation
-```
 
 This also makes the intended restore point explicit.
 
@@ -222,12 +220,11 @@ I store `old_value` and `new_value` as JSON.
 
 For example:
 
-```json
 {
   "owner_id": 2,
   "owner_name": "Alice Rep"
 }
-```
+
 
 The reason I did this is that the history should describe what actually happened at that time. If Alice changes her name later, the old history should still show the information that was recorded when the event happened.
 
@@ -239,12 +236,11 @@ Instead, it is calculated from the current stage using the stage probability con
 
 For example:
 
-```text
+
 NEW          → 10%
 QUALIFIED    → 25%
 PROPOSAL     → 50%
 NEGOTIATION  → 75%
-```
 
 This avoids having a deal's stored probability become inconsistent with its stage.
 
@@ -252,62 +248,27 @@ This avoids having a deal's stored probability become inconsistent with its stag
 
 ## What would break first if this had 100x the data?
 
-The first thing I would expect to have problems is **queries that return too much data**, especially deal listings.
+Even though I built server-side pagination for the main deal listings (Goal 6), scaling to 100x the data would still stress the system in three specific ways:
 
-Right now, an unpaginated query using `.all()` is fine for a small assignment dataset. With hundreds of thousands of deals, it would become expensive because the server would try to load a huge result set into memory.
+### 1. The visibility query (composite indexes)
 
-So server-side pagination and filtering become very important.
+The `get_visible_deals_query()` joins `deals`, `companies`, and `deal_collaborators` to check ownership and access. Right now, running that complex `OR` condition (deals I own OR deals I collaborate on OR deals in companies I own) across hundreds of thousands of rows would trigger slow sequential scans.
 
-### Visibility queries
+To fix this, the database would need proper composite indexes based on those exact access patterns, such as:
+* `(owner_id, deleted_at)` on Deals
+* `(company_id, deleted_at)` on Deals
+* `(user_id, deal_id)` on DealCollaborators
 
-The visibility logic also becomes more expensive as the number of deals and collaborators grows.
+### 2. The `deal_history` table (Rapid bloat)
 
-For example, checking:
+Because this table is append-only and one deal generates many history records (creation, multiple stage changes, owner changes, note additions, collaboration changes), `deal_history` will grow significantly faster than the `deals` table.
 
-```text
-Deals I own
-OR
-Deals I collaborate on
-OR
-Deals under companies I can access
-```
+At 100x scale, querying a deal's timeline could become sluggish. The solution would be to partition `deal_history` by `deal_id` (so all history for a deal sits physically together on disk) or by time (moving old history into cold storage).
 
-across hundreds of thousands of rows will need proper indexes.
+### 3. Synchronous bulk operations
 
-I would look at composite indexes such as:
+Right now, bulk actions (like advancing or reassigning deals) iterate through the requested IDs, process the business rules, update the deals, and write to `deal_history` one by one within a single synchronous HTTP request. 
 
-```text
-(owner_id, deleted_at)
-(company_id, deleted_at)
-```
+While this works perfectly for 50 or 100 deals, at 100x scale a user could select 5,000+ deals at once. Processing that many records sequentially in a single transaction would cause the HTTP request to time out, lock the database rows for too long, and exhaust the server's memory.
 
-and indexes on the collaborator relationships.
-
-### Deal history
-
-The history table will probably grow faster than the main deal table because one deal can generate many history records.
-
-For example, one deal might have:
-
-```text
-Created
-Stage changed
-Stage changed
-Backward movement
-Owner changed
-Collaborator added
-Note added
-```
-
-As the system grows, `deal_history` could become much larger than `deals`. At a much bigger scale, I would consider partitioning the history table by time or deal ID.
-
-### What I would improve first
-
-If this actually reached 100x the current data, my first improvements would be:
-
-1. Make all deal listing endpoints paginated.
-2. Add and verify indexes based on actual query patterns.
-3. Profile the visibility queries instead of assuming they are fast enough.
-4. Consider partitioning `deal_history` if it becomes very large.
-
-I don't think the schema needs to be completely redesigned at 100x. The first problems would mostly come from query size, visibility checks, and the growing history table.
+To fix this at scale, I would need to move bulk operations to a background task queue (like Celery/Redis) where they can be processed asynchronously in batches, or rewrite the logic to use SQLAlchemy's `bulk_insert_mappings` and raw `UPDATE` statements instead of processing them iteratively.

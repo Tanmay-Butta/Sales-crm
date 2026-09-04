@@ -241,10 +241,14 @@ export default function MyDealsPage() {
     if (!noteText.trim()) return;
     setNoteSubmitting(true);
     try {
-      await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
+      const res = await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
       toast.success("Note added to timeline");
       setNoteText("");
-      loadHistory(historyModalDeal.id);
+      if (res.data?.history) {
+        setHistoryEvents(prev => [res.data.history, ...prev]);
+      } else {
+        loadHistory(historyModalDeal.id);
+      }
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to add note");
     } finally {
@@ -1047,7 +1051,7 @@ export default function MyDealsPage() {
                   padding: '10px 12px',
                   marginBottom: '16px'
                 }}>
-                  <p className="text-xs" style={{ color: '#facc15', margin: 0, lineHeight: 1.4 }}>
+                  <p className="text-xs" style={{ color: '#fbbf24', margin: 0, lineHeight: 1.4 }}>
                     Per CRM policy, moving a deal backward requires a recorded explanation for the deal audit trail.
                   </p>
                 </div>
