@@ -1,12 +1,65 @@
-# AI Prompts & Engineering Process Log
+# AI prompts
 
-This document records the actual prompts, pre-implementation plans, AI outputs, and manual corrections made throughout the development of Goals 1 through 5.
+The prompts you actually used, in the order you used them, grouped by what you were trying to achieve. For each significant one: what you asked, what you got back, and what you had to correct.
+
+Include at least one prompt that produced something wrong, and what you did about it.
+
+If you did not use AI at all, say so here, and describe your process instead.
 
 ---
 
-## 1. Deal Lifecycle State Machine & Reopening Invariants (Goal 4)
+## 1. Multi-Role Authentication & Browser Session Isolation (Goal 1)
 
-### The Pre-Story Plan & Context
+To thoroughly test Role-Based Access Control (RBAC), I needed to have two browser windows open side-by-side: one logged in as a `SALES_MANAGER` (e.g. `manager@crm.local`) and one logged in as a `SALES_REP` (e.g. `alice@crm.local`), testing real-time permissions on the same company and deal records.
+
+### Prompt
+```text
+Create the frontend authentication context AuthContext.jsx with login, logout, and token persistence for JWT authentication with Axios interceptors.
+```
+
+### What you got
+The AI scaffolded a clean React context that stored the JWT token in `localStorage`:
+```javascript
+localStorage.setItem('token', token);
+localStorage.setItem('user', JSON.stringify(user));
+```
+
+### What you corrected
+**Problem:** `localStorage` is shared across all tabs and windows in the same browser origin. Logging into the Sales Manager account in Tab A immediately overwrote Alice Rep's token in Tab B. When I clicked actions in Tab B expecting rep permissions, it was using the manager's token, producing confusing test results and masked permission bugs.
+
+**My Correction:**
+I refactored the auth context and `api/client.js` to use `sessionStorage` instead of `localStorage`. `sessionStorage` is strictly scoped to the individual browser tab, allowing simultaneous multi-role testing in split windows without session collisions.
+
+---
+
+## 2. Preventing Unauthorized Deal Creation (Goal 9)
+
+While I was testing the deal timeline, I started wondering what would happen if someone tried to bypass the frontend UI. The frontend only shows reps the companies they are allowed to see in the "New Deal" dropdown. But what if a rep used a tool like Postman to send a request with the ID of a company they *aren't* allowed to see?
+
+### Prompt
+```text
+now for testing i just want you to open the drop down to all companies ....like the companies bob cant see also i just want to test something
+I want to test what happens if Bob tries to create a deal for a company he's not allowed to see i just wanted to test the backend only like if bob try to create a deal for a company he cant see what will happen that test dont cahneg the backend just the frontend part you can touch i have added backend for your context.
+```
+
+### What you got
+The AI checked the `create_deal` function in the backend and realized we actually had a gap. The code checked if the company existed and wasn't archived, but it completely forgot to check if the user actually had permission to view that company!
+
+### What you corrected
+**Problem:** The backend was blindly trusting that the user was only sending valid company IDs from the frontend dropdown. If someone bypassed the UI, they could attach a deal to a company they shouldn't even know about.
+
+**My Correction:**
+I told the AI we need to lock this down in the backend so it doesn't just rely on the frontend. We added a strict visibility check inside `create_deal`:
+```python
+if not visibility_service.can_view_company(current_user, company):
+    raise AuthorizationError("You do not have permission to attach deals to this company.")
+```
+Now, if anyone tries to send a sneaky request for a hidden company, the server rejects it with a `403 Forbidden` error.
+
+---
+
+## 3. Deal Lifecycle State Machine & Reopening Invariants (Goal 4)
+
 Before writing any code for the deal lifecycle, I sat down with pencil and paper to map out the entire state machine graph. The brief had strict invariant rules:
 1. `NEW` → `QUALIFIED` → `PROPOSAL` → `NEGOTIATION` (strictly one step forward).
 2. `WON` or `LOST` can only ever be reached from `NEGOTIATION`.
@@ -28,7 +81,7 @@ Rules:
 Please write validate_stage_transition(deal, target_stage, reason) and reopen_deal(current_user, deal_id).
 ```
 
-### What AI Generated
+### What you got
 The AI provided a lookup table and the transition logic. However, in `reopen_deal`, it wrote:
 ```python
 # Restore previous stage or default to NEGOTIATION
@@ -37,7 +90,7 @@ deal.stage = target_stage
 deal.previous_stage = None
 ```
 
-### What was Wrong & What I Corrected
+### What you corrected
 **The AI introduced a silent data-corruption bug.** Defaulting `deal.previous_stage` to `NEGOTIATION` when it is `None` violates the invariant that a deal must return to the stage it occupied immediately before closing. If a deal was closed from an unexpected state or corrupted in the database, defaulting masks the bug and creates an invalid pipeline record.
 
 **My Correction:**
@@ -58,34 +111,36 @@ This turned a silent data bug into a clear, debuggable 500 error. I also added a
 
 ---
 
-## 2. Multi-Role Authentication & Browser Session Isolation (Goal 1)
+## 4. UI Testing Invariants vs Premature UI Disabling (Goal 4 & Goal 5 UI)
 
-### The Pre-Story Plan & Context
-To thoroughly test Role-Based Access Control (RBAC), I needed to have two browser windows open side-by-side: one logged in as a `SALES_MANAGER` (e.g. `manager@crm.local`) and one logged in as a `SALES_REP` (e.g. `alice@crm.local`), testing real-time permissions on the same company and deal records.
+The spec explicitly demands: *"The difference must be enforced on the server, not just hidden in the interface."*
+I needed to verify that if someone maliciously or accidentally sends an invalid payload (e.g. skipping from `NEW` to `PROPOSAL` or editing a deal as a non-collaborator), the backend returns the exact expected HTTP 400/403/409/422 status code with a descriptive error message.
 
 ### Prompt
 ```text
-Create the frontend authentication context AuthContext.jsx with login, logout, and token persistence for JWT authentication with Axios interceptors.
+Update the DealsPage.jsx and MyDealsPage.jsx components to add stage change dropdowns and action buttons for testing deal operations.
 ```
 
-### What AI Generated
-The AI scaffolded a clean React context that stored the JWT token in `localStorage`:
-```javascript
-localStorage.setItem('token', token);
-localStorage.setItem('user', JSON.stringify(user));
+### What you got
+The AI tried to be "helpful" by disabling illegal stage options in the dropdown and hiding action buttons if the user wasn't the owner:
+```jsx
+<select disabled={!canEdit}>
+  {availableStages.map(s => (
+    <option key={s} disabled={!isValidNextStage(deal.stage, s)}>{s}</option>
+  ))}
+</select>
 ```
 
-### What was Wrong & What I Corrected
-**Problem:** `localStorage` is shared across all tabs and windows in the same browser origin. Logging into the Sales Manager account in Tab A immediately overwrote Alice Rep's token in Tab B. When I clicked actions in Tab B expecting rep permissions, it was using the manager's token, producing confusing test results and masked permission bugs.
+### What you corrected
+**Problem:** By disabling the options in the frontend, the UI prevented me from actually testing the server-side validator and ensuring that toast error notifications trigger properly on invalid inputs.
 
 **My Correction:**
-I refactored the auth context and `api/client.js` to use `sessionStorage` instead of `localStorage`. `sessionStorage` is strictly scoped to the individual browser tab, allowing simultaneous multi-role testing in split windows without session collisions.
+I directed the AI to keep the dropdown options and buttons clickable during testing mode, ensuring that when an invalid move (e.g. `NEW` → `PROPOSAL` or backward without reason) is selected, the request hits the backend API, the backend rejects it with `INVALID_STAGE_TRANSITION` or `BACKWARD_REASON_REQUIRED`, and the frontend toast displays the exact backend error message to the user.
 
 ---
 
-## 3. Collaborators & Asymmetric Visibility Model (Goal 5 & Goal 1)
+## 5. Collaborators & Asymmetric Visibility Model (Goal 5 & Goal 1)
 
-### The Pre-Story Plan & Context
 The spec states: *"Sales reps can see only the companies and deals they own or collaborate on."*
 This creates an interesting edge case: If Manager reassigns Deal X to Rep B, but the parent company is owned by Rep A:
 - Rep B needs to see the parent company (to know who the customer is).
@@ -97,7 +152,7 @@ This creates an interesting edge case: If Manager reassigns Deal X to Rep B, but
 Write visibility helpers in backend/app/services/visibility_service.py to handle company deals when a rep is either the company owner or just a collaborator on one deal.
 ```
 
-### What AI Generated
+### What you got
 The AI provided a naive symmetric helper:
 ```python
 def get_company_deals(user, company_id):
@@ -107,7 +162,7 @@ def get_company_deals(user, company_id):
     return []
 ```
 
-### What was Wrong & What I Corrected
+### What you corrected
 **Security & Privacy Leak:** The AI assumed that if a rep can view the company, they should see *all* deals in it. This meant that adding Rep B as a collaborator on one small $5k deal leaked Rep A's other confidential $500k deals in the same company.
 
 **My Correction:**
@@ -126,67 +181,12 @@ return query.filter(
     )
 )
 ```
-I also created a separate `get_my_deals_query()` specifically for the "My Deals" page (5) so that company-owned deals don't pollute a rep's personal daily workflow queue unless they are directly assigned or collaborating.
-
----
-
-## 4. UI Testing Invariants vs Premature UI Disabling (Goal 4 & Goal 5 UI)
-
-### The Pre-Story Plan & Context
-The spec explicitly demands: *"The difference must be enforced on the server, not just hidden in the interface."*
-I needed to verify that if someone maliciously or accidentally sends an invalid payload (e.g. skipping from `NEW` to `PROPOSAL` or editing a deal as a non-collaborator), the backend returns the exact expected HTTP 400/403/409/422 status code with a descriptive error message.
-
-### Prompt
-```text
-Update the DealsPage.jsx and MyDealsPage.jsx components to add stage change dropdowns and action buttons for testing deal operations.
-```
-
-### What AI Generated
-The AI tried to be "helpful" by disabling illegal stage options in the dropdown and hiding action buttons if the user wasn't the owner:
-```jsx
-<select disabled={!canEdit}>
-  {availableStages.map(s => (
-    <option key={s} disabled={!isValidNextStage(deal.stage, s)}>{s}</option>
-  ))}
-</select>
-```
-
-### What was Wrong & What I Corrected
-**Problem:** By disabling the options in the frontend, the UI prevented me from actually testing the server-side validator and ensuring that toast error notifications trigger properly on invalid inputs.
-
-**My Correction:**
-I directed the AI to keep the dropdown options and buttons clickable during testing mode, ensuring that when an invalid move (e.g. `NEW` → `PROPOSAL` or backward without reason) is selected, the request hits the backend API, the backend rejects it with `INVALID_STAGE_TRANSITION` or `BACKWARD_REASON_REQUIRED`, and the frontend toast displays the exact backend error message to the user.
-
-## 5. Preventing Unauthorized Deal Creation (Goal 9)
-
-### The Pre-Story Plan & Context
-i did the testing of all the rules rigourously but toady While i was testing the deal timeline, I started wondering what would happen if someone tried to bypass the frontend UI as frontend was showing a drop down list comming from backend while creating a deal. The frontend only shows reps the companies they are allowed to see in the "New Deal" dropdown. But what if a rep used a tool like Postman to send a request with the ID of a company they *aren't* allowed to see?
-
-### Prompt
-```text
-now for testing i just want you to open the drop down to all companies ....like the companies bob cant see also i just want to test something
-I want to test what happens if Bob tries to create a deal for a company he's not allowed to see i just wanted to test the backend only like if bob try to create a deal for a company he cant see what will happen that test dont cahneg the backend just the frontend part you can touch i have added backend for your context.
-```
-
-### What AI Generated / Discovered
-The AI checked the `create_deal` function in the backend and realized we actually had a gap. The code checked if the company existed and wasn't archived, but it completely forgot to check if the user actually had permission to view that company! 
-
-### What was Wrong & What I Corrected
-**Problem:** The backend was blindly trusting that the user was only sending valid company IDs from the frontend dropdown. If someone bypassed the UI, they could attach a deal to a company they shouldn't even know about.
-
-**My Correction:**
-I told the AI we need to lock this down in the backend so it doesn't just rely on the frontend. We added a strict visibility check inside `create_deal`:
-```python
-if not visibility_service.can_view_company(current_user, company):
-    raise AuthorizationError("You do not have permission to attach deals to this company.")
-```
-Now, if anyone tries to send a sneaky request for a hidden company, the server rejects it with a `403 Forbidden` error.
+I also created a separate `get_my_deals_query()` specifically for the "My Deals" page so that company-owned deals don't pollute a rep's personal daily workflow queue unless they are directly assigned or collaborating.
 
 ---
 
 ## 6. Server-Side Finding Deals & Dynamic Sorting SQL Injection Prevention (Goal 6)
 
-### The Pre-Story Plan & Context
 When planning Goal 6 (Finding Deals with text search, multiple filters, dynamic sorting, and pagination), I wanted to make sure everything happened strictly on the database side rather than loading all deals into the browser. 
 
 While reviewing how sorting and filtering would work dynamically, I realized a classic security risk in CRM applications: dynamic SQL sorting. When a user can pick columns to sort by (`value`, `expected_close_date`, `updated_at`) and pass `sort_by` and `sort_dir` as query parameters, naive backend code often interpolates or executes those strings directly in the query, creating a major SQL injection / attribute reflection vulnerability.
@@ -197,7 +197,7 @@ I want to implement Goal 6 (server-side search, filtering by company/stage/owner
 Make sure to check if there is any SQL injection vulnerability in the search and sort query logic, and ensure all query parameters are properly sanitized and allowlisted.
 ```
 
-### What AI Generated
+### What you got
 In an initial draft of dynamic sorting and search, the AI attempted to dynamically pass string column names directly into the ORM order clause or use raw SQL fragments:
 ```python
 # Risky dynamic ordering pattern:
@@ -206,7 +206,7 @@ sort_order = request.args.get('sort_dir', 'desc')
 query = query.order_by(text(f"{sort_field} {sort_order}"))
 ```
 
-### What was Wrong & What I Corrected
+### What you corrected
 **Security Vulnerability:** Passing arbitrary user-controlled strings directly into `order_by(text(...))` allows an attacker to inject SQL clauses, subqueries, or trigger database errors through the sort parameter (e.g. `?sort_by=CASE WHEN (SELECT ...)=1 THEN value ELSE title END`).
 
 **My Correction:**
@@ -223,7 +223,6 @@ I wrote automated backend test cases in `scratch/test_search_filters_pagination.
 
 ## 7. Eliminating Redundant Visibility Checks & Reusing `get_deal` in Goal 10 (Alerts)
 
-### The Pre-Story Plan & Context
 Before implementing Goal 10 (Past-due deal alerts), I outlined a checklist of rules to ensure the implementation stayed lean and accurate:
 1. Alerts must only trigger for open deals whose `expected_close_date` has passed (strictly `< today` in Indian Standard Time).
 2. Avoid creating a separate database table for alerts; derive active alerts dynamically from the `deals` table.
@@ -231,7 +230,7 @@ Before implementing Goal 10 (Past-due deal alerts), I outlined a checklist of ru
 4. Only the deal's primary owner and the sales manager can dismiss an alert (non-owner collaborators and unauthorized reps must receive a 403 Forbidden).
 5. The navigation sidebar badge should update dynamically across the entire app whenever deals are closed, rescheduled, or dismissed.
 
-### Prompt Sequence
+### Prompt
 ```text
 Goal 10 — Alerts: implementation checklist
 - Only open deals can generate alerts: stage != WON and stage != LOST
@@ -242,7 +241,7 @@ Goal 10 — Alerts: implementation checklist
 - Navigation count badge should update dynamically when deals change state
 ```
 
-### What AI Generated
+### What you got
 The AI helped me implement `alert_service.py` and the alert query and dismissal logic. However, to verify deal existence and user access when dismissing an alert, the AI added a brand new helper function inside `visibility_service.py`:
 ```python
 # Added into visibility_service.py:
@@ -267,7 +266,7 @@ if not visibility_service.can_view_deal(current_user, deal):
     raise NotFoundError("Deal not found")
 ```
 
-### What was Wrong & What I Corrected
+### What you corrected
 **Code Duplication & Redundancy:** I caught that the AI was creating unnecessary new functions in `visibility_service.py`. We already had `deal_service.get_deal(current_user, deal_id)` which already checks deal existence, handles soft-deletion, and enforces visibility through `visibility_service.get_visible_deals_query(current_user)` in a single clean call!
 
 **My Follow-Up Prompt & Correction:**
@@ -300,30 +299,21 @@ This kept `visibility_service.py` clean, eliminated duplicate code, and ensured 
 
 ## 8. Cloud Deployment: Docker Packaging & Cloud Run
 
-### The Pre-Story Plan & Context
 For production deployment, I planned to containerize the backend and deploy it to **Google Cloud Run** using **Cloud Build**, while migrating our local testing data over to **Supabase Managed PostgreSQL**. I instructed the AI to prepare the necessary `Dockerfile` and deployment scripts to assist with this process.
 
-### Prompt Sequence
+### Prompt
 ```text
 I am deploying the backend to Google Cloud Run. Generate the Dockerfile and the gcloud deployment commands.
 ```
 
-After the AI provided the initial files, I noticed critical flaws in its approach and corrected it:
-```text
-Your Dockerfile is wrong. You hardcoded the port to 8080 instead of using the $PORT env variable that Cloud Run injects. Also, you didn't create a .dockerignore file, which means Cloud Build is going to upload my entire Windows venv/ folder into the Linux container. Fix these.
-```
+### What you got
+The AI initially generated a simplistic `Dockerfile` with a hardcoded port (`CMD ["gunicorn", "--bind", "0.0.0.0:8080", ...]`). It also completely forgot to generate a `.dockerignore` file. 
 
-Then I directed the database migration:
+### What you corrected
+- **Dynamic Port Binding:** Cloud Run injects `$PORT` dynamically, so hardcoding 8080 would fail to start. I corrected the AI and forced it to update the `Dockerfile` to use runtime port binding: `CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120 wsgi:app"]`.
+- **Added `.dockerignore`:** If I had blindly run its deployment command without a `.dockerignore`, it would have packaged my massive Windows `venv/` directory into the Linux container, bloating the image and causing deployment failures. I instructed the AI to generate a proper `backend/.dockerignore` to strictly exclude `venv/`, `__pycache__/`, and local SQLite files.
+- **Data Sync & Deployment:** After correcting the AI's deployment files, I directed it to write a database migration script:
 ```text
 Now that the container is fixed, write a Python script to extract all my local SQLite testing data (users, companies, deals) and push it directly into my new Supabase PostgreSQL instance so we don't start with an empty database.
 ```
-
-### What AI Generated & What Was Caught
-1. **Flawed Dockerfile:** The AI initially generated a simplistic `Dockerfile` with a hardcoded port (`CMD ["gunicorn", "--bind", "0.0.0.0:8080", ...]`). This would fail on Cloud Run, which requires listening on the dynamically injected `$PORT`.
-2. **Missing `.dockerignore`:** The AI completely forgot to generate a `.dockerignore` file. If I had blindly run its deployment command, it would have packaged the massive `venv/` directory and Windows binaries into the Linux container, bloating the image and causing deployment failures.
-
-### What was Wrong & What I Corrected
-- **Dynamic Port Binding:** I corrected the AI and forced it to update the `Dockerfile` to use runtime port binding: `CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120 wsgi:app"]`.
-- **Added `.dockerignore`:** I instructed the AI to generate a proper `backend/.dockerignore` to strictly exclude `venv/`, `__pycache__/`, and local SQLite files.
-- **Data Sync & Deployment:** After correcting the AI's deployment files, I successfully executed the database sync script to push the local testing state (58 deals, 30 collaborators) into Supabase. I then ran the corrected `gcloud run deploy` command to push the container to `asia-south1`, verifying the live HTTPS URL.
-
+I successfully executed the sync script to push the local testing state (58 deals, 30 collaborators) into Supabase, then ran the corrected `gcloud run deploy` command to push the container to `asia-south1`.

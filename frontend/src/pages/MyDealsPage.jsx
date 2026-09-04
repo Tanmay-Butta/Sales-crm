@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { 
   ListTodo, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, X, UserPlus, Trash,
-  ArrowRight, ArrowLeft, CheckCircle2, XCircle, Lock, RotateCcw, MessageSquare, Sparkles, UserCheck, UserMinus
+  ArrowRight, ArrowLeft, CheckCircle2, XCircle, Lock, RotateCcw, MessageSquare, Sparkles, UserCheck, UserMinus, Loader2
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -23,6 +23,7 @@ export default function MyDealsPage() {
   const [companies, setCompanies] = useState([]);
   const [reps, setReps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   // Edit / Create Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,8 +59,8 @@ export default function MyDealsPage() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const [myDealsRes, companiesRes, repsRes] = await Promise.all([
         dealsAPI.getMyDeals(),
@@ -146,7 +147,7 @@ export default function MyDealsPage() {
       }
       
       closeModal();
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to save deal";
       toast.error(message);
@@ -161,7 +162,7 @@ export default function MyDealsPage() {
     try {
       await dealsAPI.deleteDeal(id);
       toast.success("Deal deleted");
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to delete deal";
       toast.error(message);
@@ -184,10 +185,9 @@ export default function MyDealsPage() {
       toast.success("Collaborator added successfully");
       setSelectedRepId("");
       
-      // Refresh modal deal and list
       const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
       setCollabModalDeal(updatedDealRes.data.deal);
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to add collaborator";
       toast.error(message);
@@ -206,7 +206,7 @@ export default function MyDealsPage() {
       
       const updatedDealRes = await dealsAPI.getDeal(collabModalDeal.id);
       setCollabModalDeal(updatedDealRes.data.deal);
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       const message = err.response?.data?.error?.message || "Failed to remove collaborator";
       toast.error(message);
@@ -241,10 +241,14 @@ export default function MyDealsPage() {
     if (!noteText.trim()) return;
     setNoteSubmitting(true);
     try {
-      await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
+      const res = await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
       toast.success("Note added to timeline");
       setNoteText("");
-      loadHistory(historyModalDeal.id);
+      if (res.data?.history) {
+        setHistoryEvents(prev => [res.data.history, ...prev]);
+      } else {
+        loadHistory(historyModalDeal.id);
+      }
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to add note");
     } finally {
@@ -254,12 +258,15 @@ export default function MyDealsPage() {
 
   // Stage Advance Handler
   const handleAdvanceStage = async (deal, nextStage) => {
+    setActionLoadingId(deal.id);
     try {
       await dealsAPI.changeStage(deal.id, nextStage);
       toast.success(`Deal advanced to ${nextStage}`);
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to advance stage");
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -279,27 +286,32 @@ export default function MyDealsPage() {
     }
 
     setBackwardSubmitting(true);
+    setActionLoadingId(backwardModalDeal.id);
     try {
       await dealsAPI.changeStage(backwardModalDeal.id, backwardTargetStage, backwardReason.trim());
       toast.success(`Deal moved back to ${backwardTargetStage}`);
       setBackwardModalDeal(null);
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to move deal backward");
     } finally {
       setBackwardSubmitting(false);
+      setActionLoadingId(null);
     }
   };
 
   // Close Deal Handler (Won / Lost from Negotiation)
   const handleCloseDeal = async (deal, closeStage) => {
     if (!window.confirm(`Mark deal "${deal.title}" as ${closeStage}? This will close the deal.`)) return;
+    setActionLoadingId(deal.id);
     try {
       await dealsAPI.changeStage(deal.id, closeStage);
       toast.success(`Deal marked as ${closeStage}`);
-      fetchData();
+      await fetchData(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to close deal");
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -434,8 +446,15 @@ export default function MyDealsPage() {
                         {/* Quick Lifecycle Stage Transition Actions for Rep */}
                         {!deal.is_closed && (
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {deal.stage === 'NEW' && (
-                              <button 
+                            {actionLoadingId === deal.id ? (
+                              <div className="text-muted text-xs flex items-center gap-2" style={{ padding: '2px 4px' }}>
+                                <Loader2 size={14} className="animate-spin" />
+                                <span>Updating...</span>
+                              </div>
+                            ) : (
+                              <>
+                                {deal.stage === 'NEW' && (
+                                  <button 
                                 className="btn btn-xs btn-primary" 
                                 style={{ padding: '2px 8px', fontSize: '11px' }}
                                 onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
@@ -515,8 +534,10 @@ export default function MyDealsPage() {
                                 </button>
                               </>
                             )}
-                          </div>
+                          </>
                         )}
+                      </div>
+                    )}
                       </div>
                     </td>
                     <td>
@@ -1047,7 +1068,7 @@ export default function MyDealsPage() {
                   padding: '10px 12px',
                   marginBottom: '16px'
                 }}>
-                  <p className="text-xs" style={{ color: '#facc15', margin: 0, lineHeight: 1.4 }}>
+                  <p className="text-xs" style={{ color: '#fbbf24', margin: 0, lineHeight: 1.4 }}>
                     Per CRM policy, moving a deal backward requires a recorded explanation for the deal audit trail.
                   </p>
                 </div>

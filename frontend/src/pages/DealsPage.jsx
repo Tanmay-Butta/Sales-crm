@@ -3,7 +3,7 @@ import {
   Handshake, Plus, Edit2, Trash2, Users, History, AlertCircle, Building2, User as UserIcon, UserPlus, Trash,
   ArrowRight, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Lock, MessageSquare, Sparkles, UserCheck, UserMinus,
   Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, SlidersHorizontal, ChevronDown, Check,
-  Download, FastForward
+  Download, FastForward, Loader2
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
@@ -20,6 +20,7 @@ export default function DealsPage() {
   const [totalDeals, setTotalDeals] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   // Dropdown reference data
   const [companies, setCompanies] = useState([]);
@@ -143,8 +144,8 @@ export default function DealsPage() {
   }, [debouncedSearch, selectedCompanyIds, filterStage, filterOwner, viewMode, sortBy, sortDir]);
 
   // 4. Fetch deals from server whenever query params change
-  const fetchDeals = useCallback(async () => {
-    setLoading(true);
+  const fetchDeals = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const params = {
         page,
@@ -312,7 +313,7 @@ export default function DealsPage() {
     setIsBulkResultsOpen(false);
     setBulkResultsData(null);
     setSelectedDealIds([]);
-    fetchDeals();
+    fetchDeals(false);
   };
 
   // Clear all filters handler
@@ -548,10 +549,14 @@ export default function DealsPage() {
     if (!noteText.trim()) return;
     setNoteSubmitting(true);
     try {
-      await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
+      const res = await dealsAPI.addNote(historyModalDeal.id, noteText.trim());
       toast.success("Note added to timeline");
       setNoteText("");
-      loadHistory(historyModalDeal.id);
+      if (res.data?.history) {
+        setHistoryEvents(prev => [res.data.history, ...prev]);
+      } else {
+        loadHistory(historyModalDeal.id);
+      }
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to add note");
     } finally {
@@ -561,12 +566,15 @@ export default function DealsPage() {
 
   // Stage Advance Handler
   const handleAdvanceStage = async (deal, nextStage) => {
+    setActionLoadingId(deal.id);
     try {
       await dealsAPI.changeStage(deal.id, nextStage);
       toast.success(`Deal advanced to ${nextStage}`);
-      fetchDeals();
+      await fetchDeals(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to advance stage");
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -586,27 +594,32 @@ export default function DealsPage() {
     }
 
     setBackwardSubmitting(true);
+    setActionLoadingId(backwardModalDeal.id);
     try {
       await dealsAPI.changeStage(backwardModalDeal.id, backwardTargetStage, backwardReason.trim());
       toast.success(`Deal moved back to ${backwardTargetStage}`);
       setBackwardModalDeal(null);
-      fetchDeals();
+      await fetchDeals(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to move deal backward");
     } finally {
       setBackwardSubmitting(false);
+      setActionLoadingId(null);
     }
   };
 
   // Close Deal Handler (Won / Lost from Negotiation)
   const handleCloseDeal = async (deal, closeStage) => {
     if (!window.confirm(`Mark deal "${deal.title}" as ${closeStage}? This will close the deal.`)) return;
+    setActionLoadingId(deal.id);
     try {
       await dealsAPI.changeStage(deal.id, closeStage);
       toast.success(`Deal marked as ${closeStage}`);
-      fetchDeals();
+      await fetchDeals(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to close deal");
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -614,12 +627,15 @@ export default function DealsPage() {
   const handleReopenDeal = async (deal) => {
     const prev = deal.previous_stage || 'Negotiation';
     if (!window.confirm(`Reopen "${deal.title}"? It will restore to its pre-close stage (${prev}).`)) return;
+    setActionLoadingId(deal.id);
     try {
       await dealsAPI.reopenDeal(deal.id);
       toast.success(`Deal reopened to ${prev}`);
-      fetchDeals();
+      await fetchDeals(false);
     } catch (err) {
       toast.error(err.response?.data?.error?.message || "Failed to reopen deal");
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -1276,88 +1292,97 @@ export default function DealsPage() {
                           )}
                         </div>
 
-                        {/* Quick Lifecycle Stage Transition Actions */}
-                        {canEdit && !deal.is_closed && (
+                        {/* Quick Lifecycle Stage Transition Actions for Rep */}
+                        {!deal.is_closed && (
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {deal.stage === 'NEW' && (
-                              <button 
-                                className="btn btn-xs btn-primary" 
-                                style={{ padding: '2px 8px', fontSize: '11px' }}
-                                onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
-                                title="Advance to Qualified"
-                              >
-                                Advance <ArrowRight size={12} />
-                              </button>
-                            )}
-
-                            {deal.stage === 'QUALIFIED' && (
+                            {actionLoadingId === deal.id ? (
+                              <div className="text-muted text-xs flex items-center gap-2" style={{ padding: '2px 4px' }}>
+                                <Loader2 size={14} className="animate-spin" />
+                                <span>Updating...</span>
+                              </div>
+                            ) : (
                               <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'NEW'); }}
-                                  title="Move back to New (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
-                                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'PROPOSAL'); }}
-                                  title="Advance to Proposal"
-                                >
-                                  Advance <ArrowRight size={12} />
-                                </button>
-                              </>
-                            )}
+                                {deal.stage === 'NEW' && (
+                                  <button 
+                                    className="btn btn-xs btn-primary" 
+                                    style={{ padding: '2px 8px', fontSize: '11px' }}
+                                    onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'QUALIFIED'); }}
+                                    title="Advance to Qualified"
+                                  >
+                                    Advance <ArrowRight size={12} />
+                                  </button>
+                                )}
 
-                            {deal.stage === 'PROPOSAL' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'QUALIFIED'); }}
-                                  title="Move back to Qualified (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs btn-primary" 
-                                  style={{ padding: '2px 8px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'NEGOTIATION'); }}
-                                  title="Advance to Negotiation"
-                                >
-                                  Advance <ArrowRight size={12} />
-                                </button>
-                              </>
-                            )}
+                                {deal.stage === 'QUALIFIED' && (
+                                  <>
+                                    <button 
+                                      className="btn btn-xs btn-ghost text-muted" 
+                                      style={{ padding: '2px 6px', fontSize: '11px' }}
+                                      onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'NEW'); }}
+                                      title="Move back to New (requires reason)"
+                                    >
+                                      <ArrowLeft size={12} /> Back
+                                    </button>
+                                    <button 
+                                      className="btn btn-xs btn-primary" 
+                                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                                      onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'PROPOSAL'); }}
+                                      title="Advance to Proposal"
+                                    >
+                                      Advance <ArrowRight size={12} />
+                                    </button>
+                                  </>
+                                )}
 
-                            {deal.stage === 'NEGOTIATION' && (
-                              <>
-                                <button 
-                                  className="btn btn-xs btn-ghost text-muted" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'PROPOSAL'); }}
-                                  title="Move back to Proposal (requires reason)"
-                                >
-                                  <ArrowLeft size={12} /> Back
-                                </button>
-                                <button 
-                                  className="btn btn-xs" 
-                                  style={{ background: '#10b981', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
-                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'WON'); }}
-                                  title="Mark deal Won"
-                                >
-                                  <CheckCircle2 size={12} /> Won
-                                </button>
-                                <button 
-                                  className="btn btn-xs" 
-                                  style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
-                                  onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'LOST'); }}
-                                  title="Mark deal Lost"
-                                >
-                                  <XCircle size={12} /> Lost
-                                </button>
+                                {deal.stage === 'PROPOSAL' && (
+                                  <>
+                                    <button 
+                                      className="btn btn-xs btn-ghost text-muted" 
+                                      style={{ padding: '2px 6px', fontSize: '11px' }}
+                                      onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'QUALIFIED'); }}
+                                      title="Move back to Qualified (requires reason)"
+                                    >
+                                      <ArrowLeft size={12} /> Back
+                                    </button>
+                                    <button 
+                                      className="btn btn-xs btn-primary" 
+                                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                                      onClick={(e) => { e.stopPropagation(); handleAdvanceStage(deal, 'NEGOTIATION'); }}
+                                      title="Advance to Negotiation"
+                                    >
+                                      Advance <ArrowRight size={12} />
+                                    </button>
+                                  </>
+                                )}
+
+                                {deal.stage === 'NEGOTIATION' && (
+                                  <>
+                                    <button 
+                                      className="btn btn-xs btn-ghost text-muted" 
+                                      style={{ padding: '2px 6px', fontSize: '11px' }}
+                                      onClick={(e) => { e.stopPropagation(); openBackwardModal(deal, 'PROPOSAL'); }}
+                                      title="Move back to Proposal (requires reason)"
+                                    >
+                                      <ArrowLeft size={12} /> Back
+                                    </button>
+                                    <button 
+                                      className="btn btn-xs" 
+                                      style={{ background: '#10b981', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
+                                      onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'WON'); }}
+                                      title="Mark deal Won"
+                                    >
+                                      <CheckCircle2 size={12} /> Won
+                                    </button>
+                                    <button 
+                                      className="btn btn-xs" 
+                                      style={{ background: '#ef4444', color: '#fff', padding: '2px 8px', fontSize: '11px', fontWeight: 600 }}
+                                      onClick={(e) => { e.stopPropagation(); handleCloseDeal(deal, 'LOST'); }}
+                                      title="Mark deal Lost"
+                                    >
+                                      <XCircle size={12} /> Lost
+                                    </button>
+                                  </>
+                                )}
                               </>
                             )}
                           </div>
@@ -1367,12 +1392,12 @@ export default function DealsPage() {
                         {isManager && deal.is_closed && (
                           <div>
                             <button 
-                              className="btn btn-xs btn-ghost text-primary" 
-                              style={{ border: '1px solid var(--color-primary)', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              onClick={(e) => { e.stopPropagation(); handleReopenDeal(deal); }}
-                              title={`Reopen deal to ${deal.previous_stage || 'Negotiation'}`}
+                              className="btn btn-ghost btn-sm text-yellow"
+                              onClick={() => handleReopenDeal(deal)}
+                              title="Reopen Deal (Manager Only)"
+                              disabled={actionLoadingId === deal.id}
                             >
-                              <RotateCcw size={12} /> Reopen Deal
+                              <RotateCcw size={16} />
                             </button>
                           </div>
                         )}
@@ -2016,7 +2041,7 @@ export default function DealsPage() {
                   padding: '10px 12px',
                   marginBottom: '16px'
                 }}>
-                  <p className="text-xs" style={{ color: '#facc15', margin: 0, lineHeight: 1.4 }}>
+                  <p className="text-xs" style={{ color: '#fbbf24', margin: 0, lineHeight: 1.4 }}>
                     Per CRM policy, moving a deal backward requires a recorded explanation for the deal audit trail.
                   </p>
                 </div>

@@ -85,46 +85,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div style={{ marginTop: '24px', textAlign: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
-          <p className="text-xs text-muted" style={{ marginBottom: '8px' }}>
-            Quick Demo Login (Click to fill):
-          </p>
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                setEmail('manager@test.com');
-                setPassword('password123');
-              }}
-            >
-              Manager Mike
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                setEmail('alice@test.com');
-                setPassword('password123');
-              }}
-            >
-              Alice (Rep A)
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                setEmail('bob@test.com');
-                setPassword('password123');
-              }}
-            >
-              Bob (Rep B)
-            </button>
-          </div>
-          <p className="text-xs text-muted" style={{ marginTop: '8px' }}>
-            Password: <code>password123</code>
-          </p>
-        </div>
+
       </div>
     </div>
   );
