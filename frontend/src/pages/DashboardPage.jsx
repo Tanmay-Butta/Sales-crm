@@ -103,17 +103,17 @@ export default function DashboardPage() {
         prob: '25%'
       },
       PROPOSAL: {
-        color: '#fbbf24',
-        glow: 'rgba(251, 191, 36, 0.15)',
-        gradient: 'linear-gradient(90deg, #d97706, #f59e0b)',
-        bg: 'rgba(245, 158, 11, 0.1)',
+        color: '#d4b08c',
+        glow: 'rgba(212, 176, 140, 0.15)',
+        gradient: 'linear-gradient(90deg, #c29d78, #d4b08c)',
+        bg: 'rgba(212, 176, 140, 0.1)',
         prob: '50%'
       },
       NEGOTIATION: {
-        color: '#fdba74',
-        glow: 'rgba(253, 186, 116, 0.15)',
-        gradient: 'linear-gradient(90deg, #ea580c, #f97316)',
-        bg: 'rgba(249, 115, 22, 0.1)',
+        color: '#d98a6c',
+        glow: 'rgba(217, 138, 108, 0.15)',
+        gradient: 'linear-gradient(90deg, #c77a5e, #d98a6c)',
+        bg: 'rgba(217, 138, 108, 0.1)',
         prob: '75%'
       }
     };
