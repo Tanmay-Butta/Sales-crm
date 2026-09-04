@@ -45,6 +45,10 @@ class ProductionConfig(Config):
     """Production configuration."""
     DEBUG = False
 
+    # Production secrets: strictly loaded from environment variables with no insecure defaults
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+
     # Override with stricter settings in production
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
