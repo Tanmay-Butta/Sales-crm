@@ -96,6 +96,11 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Allowing Sales Reps to archive/restore companies they own.
 - **Why:** The specification for Goal 1 explicitly states: *"Sales managers create and archive companies... Sales reps create companies and deals."* While it might seem like a logical product extension to allow reps to manage (archive) the companies they create and own, doing so would deviate from the literal phrasing of the requirements. By locking down archival and restoration strictly to the `SALES_MANAGER` role, we strictly adhere to the defined separation of responsibilities.
 
+## Decision 16: Soft-Deletion and Read-Only Audit Trash for Deals (Deliberate Exclusion of Restore)
+- **Chose:** Implementing soft-delete (`deleted_at`) for deals with an immutable `DEAL_DELETED` audit event in `deal_history`, paired with a Manager-only, strictly read-only Trash view that has no restore button.
+- **Rejected:** Hard-deleting deals from the database, or adding a "Restore Deal" capability to the trash view.
+- **Why:** The specification presents an apparent tension: §3 states deals can be *"created, edited, and deleted"*, while §9 and audit guidelines demand that *"no deal should vanish without an explanation"*. Soft deletion perfectly resolves this tension: setting `deleted_at` immediately removes the deal from the active sales pipeline, open metrics, CSV exports, and rep lists (satisfying deletion), while retaining its underlying historical record (satisfying auditability). Crucially, the specification explicitly pairs *"archived and restored"* for companies (§2), but for deals it only says *"created, edited, and deleted"* — omission of restore is an intentional design constraint, not an oversight. We therefore keep the Manager's Trash view strictly read-only: managers can inspect why a deal vanished and who deleted it via the immutable `DEAL_DELETED` timeline event, without introducing an unrequested restore mechanism.
+
 ---
 ### Assumptions & Business Rules
 - **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is blocked to avoid adding fresh pipeline to closed accounts.

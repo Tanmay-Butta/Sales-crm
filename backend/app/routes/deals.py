@@ -96,6 +96,26 @@ def delete_deal(current_user, deal_id):
     return jsonify({'message': 'Deal deleted successfully'}), 200
 
 
+# --- Manager-Only Trash Endpoints ---
+
+@deals_bp.route('/trash', methods=['GET'])
+@auth_required
+def get_trash_deals(current_user):
+    """Get soft-deleted deals (Manager-only trash view)."""
+    page = request.args.get('page', 1)
+    per_page = request.args.get('per_page', 20)
+    result = deal_service.get_trash_deals(current_user, page=page, per_page=per_page)
+    return jsonify(result), 200
+
+
+@deals_bp.route('/trash/<int:deal_id>/history', methods=['GET'])
+@auth_required
+def get_trash_deal_history(current_user, deal_id):
+    """Get immutable timeline audit trail for a deleted deal (Manager-only)."""
+    result = deal_service.get_trash_deal_history(current_user, deal_id)
+    return jsonify(result), 200
+
+
 # --- Lifecycle & State Machine Endpoints ---
 
 @deals_bp.route('/<int:deal_id>/stage', methods=['POST'])

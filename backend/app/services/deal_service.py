@@ -351,9 +351,109 @@ def delete_deal(current_user, deal_id):
     if not (current_user.role == Roles.SALES_MANAGER or deal.owner_id == current_user.id):
         raise AuthorizationError("Only the deal owner or a sales manager can delete this deal")
 
+    # Record immutable audit event for deletion
+    history_entry = DealHistory(
+        deal_id=deal.id,
+        event_type=EventTypes.DEAL_DELETED,
+        old_value={
+            'stage': deal.stage,
+            'value': float(deal.value),
+            'owner_id': deal.owner_id
+        },
+        new_value={'deleted': True},
+        actor_id=current_user.id
+    )
+    db.session.add(history_entry)
+
     deal.deleted_at = datetime.now(timezone.utc)
     db.session.commit()
     return True
+
+
+def get_trash_deals(current_user, page=1, per_page=20):
+    """
+    Get paginated soft-deleted deals.
+    Restricted strictly to Sales Managers.
+    """
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only sales managers can access deleted deals", code=ErrorCodes.MANAGER_REQUIRED)
+
+    try:
+        page = max(1, int(page))
+        per_page = min(MAX_PAGE_SIZE, max(1, int(per_page)))
+    except (ValueError, TypeError):
+        page = 1
+        per_page = 20
+
+    query = Deal.query.options(
+        joinedload(Deal.company),
+        joinedload(Deal.owner)
+    ).filter(Deal.deleted_at.isnot(None)).order_by(Deal.deleted_at.desc())
+
+    total = Deal.query.filter(Deal.deleted_at.isnot(None)).count()
+    deals = query.offset((page - 1) * per_page).limit(per_page).all()
+    pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+    # Batch load DEAL_DELETED history events for all deals on this page to eliminate N+1 queries
+    deal_ids = [d.id for d in deals]
+    del_events_map = {}
+    if deal_ids:
+        del_events = DealHistory.query.options(
+            joinedload(DealHistory.actor)
+        ).filter(
+            DealHistory.deal_id.in_(deal_ids),
+            DealHistory.event_type == EventTypes.DEAL_DELETED
+        ).order_by(DealHistory.created_at.desc()).all()
+
+        for evt in del_events:
+            if evt.deal_id not in del_events_map:
+                del_events_map[evt.deal_id] = evt
+
+    result_deals = []
+    for d in deals:
+        deal_dict = d.to_dict(include_company=True, include_owner=True, include_collaborators=False)
+        del_event = del_events_map.get(d.id)
+        deal_dict['deleted_by'] = {
+            'id': del_event.actor.id,
+            'full_name': del_event.actor.full_name,
+            'email': del_event.actor.email
+        } if del_event and del_event.actor else None
+
+        result_deals.append(deal_dict)
+
+    return {
+        'deals': result_deals,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'pages': pages
+    }
+
+
+def get_trash_deal_history(current_user, deal_id):
+    """
+    Get history for a soft-deleted deal.
+    Restricted strictly to Sales Managers.
+    Core get_deal remains untouched.
+    """
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only sales managers can access deleted deal history", code=ErrorCodes.MANAGER_REQUIRED)
+
+    deal = Deal.query.options(
+        joinedload(Deal.company),
+        joinedload(Deal.owner),
+        selectinload(Deal.collaborators)
+    ).filter_by(id=deal_id).first()
+    if not deal or deal.deleted_at is None:
+        raise NotFoundError("Deleted deal not found", code=ErrorCodes.DEAL_NOT_FOUND)
+
+    history = DealHistory.query.options(
+        joinedload(DealHistory.actor)
+    ).filter_by(deal_id=deal.id).order_by(DealHistory.created_at.desc()).all()
+    return {
+        'deal': deal.to_dict(include_company=True, include_owner=True, include_collaborators=True),
+        'history': [h.to_dict() for h in history]
+    }
 
 
 def add_collaborator(current_user, deal_id, user_id):
