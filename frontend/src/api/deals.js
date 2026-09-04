@@ -86,5 +86,14 @@ export const dealsAPI = {
   // Immutable Notes (append-only, §9)
   addNote: (dealId, note) => {
     return client.post(`/deals/${dealId}/notes`, { note });
+  },
+
+  // Manager-only Trash / Soft-Deleted Deals
+  getTrashDeals: (params = {}) => {
+    return client.get('/deals/trash', { params });
+  },
+
+  getTrashDealHistory: (dealId) => {
+    return client.get(`/deals/trash/${dealId}/history`);
   }
 };

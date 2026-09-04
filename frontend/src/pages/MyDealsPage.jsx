@@ -781,8 +781,12 @@ export default function MyDealsPage() {
 
       {/* History / Audit Trail Timeline Modal */}
       {historyModalDeal && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalDeal(null); }}>
-          <div className="modal" style={{ maxWidth: '640px' }}>
+        <div 
+          className="modal-overlay" 
+          style={{ zIndex: 70 }} 
+          onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalDeal(null); }}
+        >
+          <div className="modal" style={{ maxWidth: '640px', position: 'relative', zIndex: 71 }}>
             <div className="modal-header">
               <div>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -894,6 +898,13 @@ export default function MyDealsPage() {
                       badgeBg = 'rgba(129, 140, 248, 0.12)';
                       badgeBorder = 'rgba(129, 140, 248, 0.3)';
                       actionElement = <span>added a note</span>;
+                    } else if (h.event_type === 'DEAL_DELETED') {
+                      icon = <Trash2 size={14} style={{ color: '#ef4444' }} />;
+                      badgeBg = 'rgba(239, 68, 68, 0.12)';
+                      badgeBorder = 'rgba(239, 68, 68, 0.3)';
+                      actionElement = (
+                        <span>deleted this deal <span className="text-muted text-xs">(was in {h.old_value?.stage} stage with value {formatCurrency(h.old_value?.value || 0)})</span></span>
+                      );
                     }
 
                     const rawDate = h.created_at ? (h.created_at.endsWith('Z') || h.created_at.includes('+') ? h.created_at : h.created_at + 'Z') : new Date().toISOString();

@@ -44,7 +44,7 @@ If the change succeeds, the deal and its history entry are saved together.
 
 ## What did I decide not to build, and why?
 
-* **No public Sign Up page:** This is an internal CRM, so I assumed accounts would normally be created internally. I still added the `/api/auth/register` endpoint for internal/programmatic user creation.
+* **No public Sign Up page or public registration endpoint:** This is an internal CRM, so user accounts cannot be self-registered on the open internet. User provisioning is strictly manager-gated via `POST /api/auth/users`, where `SALES_REP` is enforced by the server and client-supplied role parameters are forbidden. The initial manager is provisioned via seed/CLI.
 * **No email verification/password reset:** Useful for production, but outside the main assignment scope.
 * **No real-time updates:** Users may need to refresh to see another user's changes. This is acceptable for the small team described in the scenario.
 * **No microservices:** One Flask application is enough for this scale. I didn't want to add infrastructure without a real need.

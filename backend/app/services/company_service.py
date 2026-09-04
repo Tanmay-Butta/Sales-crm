@@ -81,6 +81,8 @@ def create_company(current_user, data):
     _check_duplicate_name(name, current_user, allow_duplicate=allow_duplicate)
 
     if current_user.role == Roles.SALES_REP:
+        if 'owner_id' in data and data['owner_id'] and int(data['owner_id']) != current_user.id:
+            raise AuthorizationError("Sales Reps cannot create companies for other users")
         data['owner_id'] = current_user.id
     else:
         if 'owner_id' not in data or not data['owner_id']:
@@ -129,22 +131,20 @@ def update_company(current_user, company_id, data):
     return company
 
 def archive_company(current_user, company_id):
-    company = get_company(current_user, company_id)
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only Sales Managers can archive companies", code=ErrorCodes.MANAGER_REQUIRED)
     
-    if current_user.role == Roles.SALES_REP and company.owner_id != current_user.id:
-        raise AuthorizationError("Only the company owner can archive the company")
-        
+    company = get_company(current_user, company_id)
     if not company.archived_at:
         company.archived_at = datetime.now(timezone.utc)
         db.session.commit()
     return company
 
 def restore_company(current_user, company_id):
+    if current_user.role != Roles.SALES_MANAGER:
+        raise AuthorizationError("Only Sales Managers can restore companies", code=ErrorCodes.MANAGER_REQUIRED)
+        
     company = get_company(current_user, company_id)
-    
-    if current_user.role == Roles.SALES_REP and company.owner_id != current_user.id:
-        raise AuthorizationError("Only the company owner can restore the company")
-
     if company.archived_at:
         company.archived_at = None
         db.session.commit()

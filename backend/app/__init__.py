@@ -14,6 +14,13 @@ from app.middleware.error_handler import register_error_handlers
 from app.routes import register_routes
 
 
+INSECURE_DEV_SECRETS = {
+    'dev-secret-key-change-in-production',
+    'jwt-dev-secret-change-in-production',
+    'dev-jwt-secret-key-change-in-production-9f8a7b6c',
+}
+
+
 def create_app(config_name=None):
     """Create and configure the Flask application.
 
@@ -23,6 +30,23 @@ def create_app(config_name=None):
     """
     if config_name is None:
         config_name = os.environ.get('FLASK_ENV', 'development')
+
+    # Fail-fast security check: halt startup if running in production without explicit, secure secrets
+    if config_name == 'production':
+        secret_key = os.environ.get('SECRET_KEY')
+        jwt_secret_key = os.environ.get('JWT_SECRET_KEY')
+
+        if not secret_key or secret_key in INSECURE_DEV_SECRETS:
+            raise RuntimeError(
+                "FATAL CONFIGURATION ERROR: SECRET_KEY environment variable must be explicitly "
+                "set in production and cannot use known dev fallbacks. Server startup halted."
+            )
+
+        if not jwt_secret_key or jwt_secret_key in INSECURE_DEV_SECRETS:
+            raise RuntimeError(
+                "FATAL CONFIGURATION ERROR: JWT_SECRET_KEY environment variable must be explicitly "
+                "set in production and cannot use known dev fallbacks. Server startup halted."
+            )
 
     flask_app = Flask(__name__)
     flask_app.config.from_object(config_by_name[config_name])

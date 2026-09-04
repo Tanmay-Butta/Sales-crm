@@ -95,6 +95,12 @@ export default function DealsPage() {
   const [noteText, setNoteText] = useState("");
   const [noteSubmitting, setNoteSubmitting] = useState(false);
 
+  // Manager-only Trash Modal state
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [trashDeals, setTrashDeals] = useState([]);
+  const [trashLoading, setTrashLoading] = useState(false);
+  const [trashTotal, setTrashTotal] = useState(0);
+
   // Close company dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -504,6 +510,39 @@ export default function DealsPage() {
     loadHistory(deal.id);
   };
 
+  // Manager Trash Handlers
+  const fetchTrashDeals = async () => {
+    setTrashLoading(true);
+    try {
+      const res = await dealsAPI.getTrashDeals();
+      setTrashDeals(res.data.deals || []);
+      setTrashTotal(res.data.total || 0);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to load trash deals");
+    } finally {
+      setTrashLoading(false);
+    }
+  };
+
+  const openTrashModal = () => {
+    setIsTrashOpen(true);
+    fetchTrashDeals();
+  };
+
+  const openTrashDealHistory = async (deal) => {
+    setHistoryModalDeal(deal);
+    setHistoryLoading(true);
+    setHistoryEvents([]);
+    try {
+      const res = await dealsAPI.getTrashDealHistory(deal.id);
+      setHistoryEvents(res.data.history || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || "Failed to load deal history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const handleAddNote = async (e) => {
     e.preventDefault();
     if (!noteText.trim()) return;
@@ -698,6 +737,23 @@ export default function DealsPage() {
         </div>
         
         <div className="page-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {isManager && (
+            <button
+              className="btn btn-secondary"
+              onClick={openTrashModal}
+              title="View Deleted Deals (Manager Audit Trail)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                color: '#ef4444',
+                background: 'rgba(239, 68, 68, 0.08)'
+              }}
+            >
+              <Trash2 size={16} /> Trash
+            </button>
+          )}
           <button
             className="btn btn-secondary"
             onClick={handleExportCSV}
@@ -1688,8 +1744,12 @@ export default function DealsPage() {
 
       {/* History / Audit Trail Timeline Modal */}
       {historyModalDeal && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalDeal(null); }}>
-          <div className="modal" style={{ maxWidth: '640px' }}>
+        <div 
+          className="modal-overlay" 
+          style={{ zIndex: 70 }} 
+          onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalDeal(null); }}
+        >
+          <div className="modal" style={{ maxWidth: '640px', position: 'relative', zIndex: 71 }}>
             <div className="modal-header">
               <div>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1701,28 +1761,34 @@ export default function DealsPage() {
               <button className="modal-close" onClick={() => setHistoryModalDeal(null)}>✕</button>
             </div>
             
-            {/* Add Note Input */}
-            <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
-              <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Add a note to this deal..."
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  maxLength={2000}
-                  style={{ flex: 1 }}
-                />
-                <button 
-                  type="submit" 
-                  className="btn btn-primary" 
-                  disabled={noteSubmitting || !noteText.trim()}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
-                  {noteSubmitting ? 'Adding...' : 'Add Note'}
-                </button>
-              </form>
-            </div>
+            {/* Add Note Input - Only for Active Deals */}
+            {!historyModalDeal.deleted_at ? (
+              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+                <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Add a note to this deal..."
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    maxLength={2000}
+                    style={{ flex: 1 }}
+                  />
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary" 
+                    disabled={noteSubmitting || !noteText.trim()}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {noteSubmitting ? 'Adding...' : 'Add Note'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div style={{ padding: '10px 20px', background: 'rgba(239, 68, 68, 0.08)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.8rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertCircle size={14} /> This deal was deleted. The audit trail below is immutable and read-only.
+              </div>
+            )}
 
             <div className="modal-body" style={{ maxHeight: '450px', overflowY: 'auto' }}>
               {historyLoading ? (
@@ -1801,6 +1867,13 @@ export default function DealsPage() {
                       badgeBg = 'rgba(129, 140, 248, 0.12)';
                       badgeBorder = 'rgba(129, 140, 248, 0.3)';
                       actionElement = <span>added a note</span>;
+                    } else if (h.event_type === 'DEAL_DELETED') {
+                      icon = <Trash2 size={14} style={{ color: '#ef4444' }} />;
+                      badgeBg = 'rgba(239, 68, 68, 0.12)';
+                      badgeBorder = 'rgba(239, 68, 68, 0.3)';
+                      actionElement = (
+                        <span>deleted this deal <span className="text-muted text-xs">(was in {h.old_value?.stage} stage with value {formatCurrency(h.old_value?.value || 0)})</span></span>
+                      );
                     }
 
                     const rawDate = h.created_at ? (h.created_at.endsWith('Z') || h.created_at.includes('+') ? h.created_at : h.created_at + 'Z') : new Date().toISOString();
@@ -2323,6 +2396,98 @@ export default function DealsPage() {
             <div className="modal-footer">
               <button type="button" className="btn btn-primary" onClick={handleCloseBulkResults}>
                 Close & Refresh Deals
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manager-Only Trash / Soft-Deleted Deals Modal */}
+      {isTrashOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setIsTrashOpen(false); }}>
+          <div className="modal" style={{ maxWidth: '900px', width: '90%' }}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444' }}>
+                  <Trash2 size={20} />
+                  Deleted Deals (Trash)
+                  <span className="badge badge-gray text-xs" style={{ marginLeft: '8px', fontWeight: 'normal' }}>
+                    Manager Audit View
+                  </span>
+                </h3>
+                <p className="text-muted text-xs mt-1">
+                  Deals in this view were soft-deleted and removed from the active sales pipeline. History is preserved for audit compliance. Deletions are final (no restore).
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setIsTrashOpen(false)}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '520px', overflowY: 'auto', padding: '16px' }}>
+              {trashLoading ? (
+                <div className="text-center p-6 text-muted">Loading deleted deals...</div>
+              ) : trashDeals.length === 0 ? (
+                <div className="text-center p-8 text-muted" style={{ background: 'var(--color-bg)', borderRadius: '8px' }}>
+                  <Trash2 size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
+                  <p>No deleted deals found. Your pipeline is clean.</p>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>DEAL TITLE</th>
+                        <th>COMPANY</th>
+                        <th>FINAL VALUE</th>
+                        <th>FINAL STAGE</th>
+                        <th>DELETED BY</th>
+                        <th style={{ textAlign: 'right' }}>TIMELINE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trashDeals.map((deal) => (
+                        <tr key={deal.id}>
+                          <td className="font-medium text-white">{deal.title}</td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <Building2 size={14} className="text-muted" />
+                              <span>{deal.company?.name || "Unknown"}</span>
+                            </div>
+                          </td>
+                          <td className="font-medium text-white">{formatCurrency(deal.value)}</td>
+                          <td>
+                            <span className={getStageBadge(deal.stage)}>
+                              {deal.stage}
+                            </span>
+                          </td>
+                          <td className="text-xs">
+                            <div className="flex items-center gap-1">
+                              <UserIcon size={12} className="text-muted" />
+                              <span>{deal.deleted_by?.full_name || "Unknown"}</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              className="btn btn-ghost btn-sm text-primary"
+                              onClick={() => openTrashDealHistory(deal)}
+                              title="View Immutable Audit Timeline"
+                            >
+                              <History size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="text-xs text-muted">
+                {trashTotal} deleted deal{trashTotal === 1 ? '' : 's'} recorded
+              </div>
+              <button className="btn btn-secondary" onClick={() => setIsTrashOpen(false)}>
+                Close
               </button>
             </div>
           </div>

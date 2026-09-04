@@ -33,7 +33,8 @@ class DealHistory(db.Model):
             "event_type IN ("
             "'DEAL_CREATED','STAGE_CHANGED','STAGE_BACKWARD',"
             "'DEAL_REOPENED','DEAL_CLOSED','OWNER_CHANGED',"
-            "'COLLABORATOR_ADDED','COLLABORATOR_REMOVED','NOTE_ADDED'"
+            "'COLLABORATOR_ADDED','COLLABORATOR_REMOVED','NOTE_ADDED',"
+            "'DEAL_DELETED'"
             ")",
             name='check_event_type',
         ),
