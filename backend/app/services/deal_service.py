@@ -784,6 +784,7 @@ def bulk_advance_deals(current_user, deal_ids, negotiation_outcome=None):
     results = []
     total_succeeded = 0
     total_failed = 0
+    seen_ids = set()
 
     for raw_id in deal_ids:
         deal_title = "Unknown"
@@ -799,6 +800,17 @@ def bulk_advance_deals(current_user, deal_ids, negotiation_outcome=None):
                 })
                 total_failed += 1
                 continue
+
+            if deal_id in seen_ids:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": "Unknown",
+                    "success": False,
+                    "reason": "Duplicate deal ID in request; cannot advance the same deal multiple times in a single bulk operation"
+                })
+                total_failed += 1
+                continue
+            seen_ids.add(deal_id)
 
             deal = Deal.query.filter_by(id=deal_id, deleted_at=None).first()
             if not deal:
@@ -976,6 +988,7 @@ def bulk_reassign_deals(current_user, deal_ids, owner_id, keep_previous_owner_as
     results = []
     total_succeeded = 0
     total_failed = 0
+    seen_ids = set()
 
     for raw_id in deal_ids:
         deal_title = "Unknown"
@@ -991,6 +1004,17 @@ def bulk_reassign_deals(current_user, deal_ids, owner_id, keep_previous_owner_as
                 })
                 total_failed += 1
                 continue
+
+            if deal_id in seen_ids:
+                results.append({
+                    "deal_id": deal_id,
+                    "deal_title": "Unknown",
+                    "success": False,
+                    "reason": "Duplicate deal ID in request; cannot reassign the same deal multiple times in a single bulk operation"
+                })
+                total_failed += 1
+                continue
+            seen_ids.add(deal_id)
 
             deal = Deal.query.filter_by(id=deal_id, deleted_at=None).first()
             if not deal:
@@ -1092,6 +1116,21 @@ def bulk_reassign_deals(current_user, deal_ids, owner_id, keep_previous_owner_as
     }
 
 
+def _sanitize_csv_field(val):
+    """
+    Sanitize text fields for CSV export to prevent CSV Formula Injection (CWE-1236).
+    If a cell begins with '=', '+', '-', '@', '\t', or '\r', spreadsheet programs (Excel, Calc)
+    may interpret the text as an executable formula or command.
+    Prepending a single quote (') forces spreadsheet software to treat the value as plain text.
+    """
+    if val is None:
+        return ""
+    str_val = str(val)
+    if str_val and str_val[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return f"'{str_val}"
+    return str_val
+
+
 def export_pipeline_csv(current_user, search=None, company_id=None, stage=None, owner_id=None, view_mode='all'):
     """
     Export the sales pipeline as a CSV file (§7).
@@ -1169,8 +1208,8 @@ def export_pipeline_csv(current_user, search=None, company_id=None, stage=None, 
         weighted_val = round(val * prob, 2)
 
         writer.writerow([
-            comp_name,
-            d.title,
+            _sanitize_csv_field(comp_name),
+            _sanitize_csv_field(d.title),
             d.stage,
             f"{val:.2f}",
             f"{weighted_val:.2f}"
