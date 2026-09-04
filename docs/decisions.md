@@ -91,8 +91,12 @@ one entry must be a decision you later reversed — say what changed your mind.
 - **Rejected:** Leaving the identical 17-line `if/elif` logic copy-pasted across both `get_deals_paginated` (for the frontend table) and `export_pipeline_csv` (for CSV downloads) in `deal_service.py`.
 - **Why:** Centralizing business logic (DRY principle: Don't Repeat Yourself) prevents dangerous drift. If the rules for what constitutes "My Deals" were to change in the future, leaving the logic duplicated would risk a developer updating one endpoint but forgetting the other. This would lead to a classic enterprise bug where the UI shows one set of deals but the CSV export contains a different set of deals. Moving this logic to `visibility_service.py` also respects separation of concerns, keeping all access-level filtering in one dedicated service module.
 
----
+## Decision 15: Restricting Company Archival to Sales Managers
+- **Chose:** Strictly enforcing that only Sales Managers can archive or restore companies in both `company_service.py` and `CompaniesPage.jsx`.
+- **Rejected:** Allowing Sales Reps to archive/restore companies they own.
+- **Why:** The specification for Goal 1 explicitly states: *"Sales managers create and archive companies... Sales reps create companies and deals."* While it might seem like a logical product extension to allow reps to manage (archive) the companies they create and own, doing so would deviate from the literal phrasing of the requirements. By locking down archival and restoration strictly to the `SALES_MANAGER` role, we strictly adhere to the defined separation of responsibilities.
 
+---
 ### Assumptions & Business Rules
 - **Company Archival**: Archiving a company is a soft-delete to preserve history. Existing deals belonging to an archived company remain intact and accessible according to normal deal visibility rules. However, creating a *new* deal under an archived company is blocked to avoid adding fresh pipeline to closed accounts.
 - **Company Ownership Rule**: Company owners must always be Sales Reps, never Sales Managers (Managers oversee the whole pipeline but don't hold individual quota).

@@ -353,13 +353,15 @@ export default function CompaniesPage() {
                               >
                                 <Edit2 size={16} />
                               </button>
-                              <button 
-                                className={`btn btn-ghost btn-sm ${company.archived_at ? 'text-success' : 'text-danger'}`}
-                                onClick={(e) => { e.stopPropagation(); toggleArchive(company); }}
-                                title={company.archived_at ? "Restore company" : "Archive company"}
-                              >
-                                {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
-                              </button>
+                              {isManager && (
+                                <button 
+                                  className={`btn btn-ghost btn-sm ${company.archived_at ? 'text-success' : 'text-danger'}`}
+                                  onClick={(e) => { e.stopPropagation(); toggleArchive(company); }}
+                                  title={company.archived_at ? "Restore company" : "Archive company"}
+                                >
+                                  {company.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}
+                                </button>
+                              )}
                             </>
                           ) : (
                             <span className="text-muted text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="You can view this company because you have deals inside it, but only the company owner can edit company details.">
